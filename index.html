@@ -1346,6 +1346,7 @@ function initTabs() {
 const SankeyView = {
   initialized: false,
   selectedTransition: 'all',
+  showIsolated: false,
 
   init() {
     this.buildControls();
@@ -1366,6 +1367,7 @@ const SankeyView = {
     html += '<div class="control-group"><span class="control-label">Мін. депутатів:</span>';
     html += '<input type="range" id="sankeyMinFlow" min="1" max="20" value="3">';
     html += '<span id="sankeyMinVal">3</span></div>';
+    html += '<div class="control-group"><label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;color:var(--text2)"><input type="checkbox" id="sankeyShowIsolated"> Показати партії без міграцій</label></div>';
     ctrl.innerHTML = html;
 
     document.getElementById('sankeyTransition').addEventListener('change', e => {
@@ -1374,6 +1376,10 @@ const SankeyView = {
     });
     document.getElementById('sankeyMinFlow').addEventListener('input', e => {
       document.getElementById('sankeyMinVal').textContent = e.target.value;
+      this.render();
+    });
+    document.getElementById('sankeyShowIsolated').addEventListener('change', e => {
+      this.showIsolated = e.target.checked;
       this.render();
     });
   },
@@ -1417,6 +1423,23 @@ const SankeyView = {
         sankeyLinks.push({ source: srcKey, target: tgtKey, value: f.count, from: f.from, to: f.to, transition: trans, mpIds: f.mpIds || [] });
       });
     });
+
+    // Collect isolated parties (exist in partyStats but no flows in this view)
+    const isolatedNodes = [];
+    if (this.showIsolated) {
+      const activeConvs = new Set();
+      transitions.forEach(t => { const [a, b] = t.split('→'); activeConvs.add(a); activeConvs.add(b); });
+      activeConvs.forEach(c => {
+        Object.entries(DATA.partyStats).forEach(([party, stats]) => {
+          if (stats[c]) {
+            const key = `${c}_${party}`;
+            if (!nodeMap.has(key)) {
+              isolatedNodes.push({ id: key, name: party, conv: parseInt(c), mps: stats[c].mps, isolated: true });
+            }
+          }
+        });
+      });
+    }
 
     const nodes = Array.from(nodeMap.values());
     const nodeIndex = new Map(nodes.map((n, i) => [n.id, i]));
@@ -1543,6 +1566,47 @@ const SankeyView = {
             .append('title').text(d.name);
         }
       });
+
+    // Draw isolated party nodes (no flows)
+    if (isolatedNodes.length > 0) {
+      // Group by conv and place below the last sankey node in that column
+      const convBottoms = {};
+      graph.nodes.forEach(n => {
+        if (!convBottoms[n.conv] || n.y1 > convBottoms[n.conv]) convBottoms[n.conv] = n.y1;
+      });
+      const isoHeight = 12;
+      const isoPad = 6;
+      isolatedNodes.forEach(iso => {
+        const x = convX[iso.conv];
+        if (x === undefined) return;
+        const yTop = (convBottoms[iso.conv] || 0) + isoPad + 20;
+        convBottoms[iso.conv] = yTop + isoHeight + isoPad;
+        const isLeft = x < width / 2;
+        const g = svg.append('g').attr('class', 'sankey-node isolated-node');
+        g.append('rect')
+          .attr('x', x).attr('y', yTop)
+          .attr('width', nodeWidth).attr('height', isoHeight)
+          .attr('fill', getPartyColor(iso.name))
+          .attr('rx', 3)
+          .attr('opacity', 0.5)
+          .attr('stroke', getPartyColor(iso.name))
+          .attr('stroke-width', 1)
+          .attr('stroke-dasharray', '3,2')
+          .on('mousemove', (event) => {
+            showTooltip(`<span class="tt-party" style="background:${getPartyColor(iso.name)}"></span> <b>${iso.name}</b><br>${romanNums[iso.conv] || iso.conv} скликання<br>${iso.mps} депутатів<br><i style="opacity:0.7">Немає міграцій</i>`, event);
+          })
+          .on('mouseleave', hideTooltip);
+        g.append('text')
+          .attr('x', isLeft ? x - 6 : x + nodeWidth + 6)
+          .attr('y', yTop + isoHeight / 2)
+          .attr('dy', '0.35em')
+          .attr('text-anchor', isLeft ? 'end' : 'start')
+          .style('font-size', '0.7rem')
+          .style('fill', 'var(--text3)')
+          .text(shortenParty(iso.name, 22))
+          .append('title').text(`${iso.name} (${iso.mps} МП, без міграцій)`);
+      });
+    }
   }
 };
 
