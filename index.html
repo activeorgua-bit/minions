@@ -1795,6 +1795,7 @@ const NetworkView = {
   draggedNode: null,
   selectedNodes: new Set(),
   searchTerm: '',
+  searchAssistant: '',
   minShared: 3,
 
   init() {
@@ -1814,6 +1815,7 @@ const NetworkView = {
     const ctrl = document.getElementById('networkControls');
     ctrl.innerHTML = `
       <input type="text" class="search-input" id="networkSearch" placeholder="Пошук депутата...">
+      <input type="text" class="search-input" id="networkAstSearch" placeholder="Пошук помічника...">
       <div class="control-group">
         <span class="control-label">Мін. спільних МП:</span>
         <input type="range" id="networkMinShared" min="3" max="15" value="3">
@@ -1823,11 +1825,18 @@ const NetworkView = {
       <div><span class="control-label">Скликання:</span><div id="netConvPills"></div></div>
     `;
 
-    let searchTimeout;
+    let searchTimeout, searchTimeout2;
     document.getElementById('networkSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
         this.searchTerm = e.target.value.toLowerCase();
+        this.draw();
+      }, 250);
+    });
+    document.getElementById('networkAstSearch').addEventListener('input', e => {
+      clearTimeout(searchTimeout2);
+      searchTimeout2 = setTimeout(() => {
+        this.searchAssistant = e.target.value.toLowerCase();
         this.draw();
       }, 250);
     });
@@ -1949,7 +1958,7 @@ const NetworkView = {
   },
 
   draw() {
-    const { ctx, w, h, nodes, links, transform, searchTerm, hoveredNode } = this;
+    const { ctx, w, h, nodes, links, transform, searchTerm, searchAssistant, hoveredNode } = this;
     ctx.clearRect(0, 0, w, h);
     ctx.save();
     ctx.translate(transform.x, transform.y);
@@ -1998,16 +2007,18 @@ const NetworkView = {
 
       let alpha = 1;
       if (dimOthers && !highlighted.has(n.id)) alpha = 0.15;
-      if (searchTerm) {
-        if (n.n.toLowerCase().includes(searchTerm)) {
+      const mpMatch = searchTerm && isMp && n.n.toLowerCase().includes(searchTerm);
+      const astMatch = searchAssistant && !isMp && n.n.toLowerCase().includes(searchAssistant);
+      const anySearch = searchTerm || searchAssistant;
+      if (anySearch) {
+        if (mpMatch || astMatch) {
           alpha = 1;
-          // Draw glow
           ctx.beginPath();
           ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(91,138,154,0.3)';
+          ctx.fillStyle = astMatch ? 'rgba(212,165,116,0.4)' : 'rgba(91,138,154,0.3)';
           ctx.fill();
-        } else if (!hoveredNode) {
-          alpha = 0.2;
+        } else if (!hoveredNode && !hasSelection) {
+          alpha = 0.15;
         }
       }
 
