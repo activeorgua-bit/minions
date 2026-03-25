@@ -610,6 +610,35 @@ input[type="range"]::-webkit-slider-thumb {
   white-space: nowrap;
   cursor: default;
 }
+.ast-count-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  color: var(--text3);
+  background: var(--bg);
+  border: 1px solid #e0dcd7;
+  border-radius: 8px;
+  padding: 0 4px;
+  margin-left: 3px;
+  cursor: pointer;
+  vertical-align: middle;
+  line-height: 1.4;
+  transition: all 0.15s;
+}
+.ast-count-badge:hover { background: var(--accent); color: white; border-color: var(--accent); }
+.cat-ast-popup {
+  position: absolute;
+  background: white;
+  border: 1px solid #e0dcd7;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  padding: 8px 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 100;
+  min-width: 200px;
+  font-size: 0.72rem;
+}
+.cat-ast-popup div { padding: 2px 0; color: var(--text2); }
 .mp-name-link {
   color: var(--text);
   text-decoration: none;
@@ -2039,6 +2068,7 @@ const MigrationView = {
   filterParties: [],
   filterConvs: [],
   filterTypes: [],
+  searchMp: '',
 
   init() {
     this.buildControls();
@@ -2050,10 +2080,16 @@ const MigrationView = {
   buildControls() {
     const ctrl = document.getElementById('migrationControls');
     ctrl.innerHTML = `
+      <input type="text" class="search-input" id="migMpSearch" placeholder="Пошук за прізвищем депутата...">
       <div style="width:100%"><span class="control-label">Партії:</span><div id="migPartyPills"></div></div>
       <div><span class="control-label">Скликання:</span><div id="migConvPills"></div></div>
       <div><span class="control-label">Тип:</span><div id="migTypePills"></div></div>
     `;
+    let searchTimeout;
+    document.getElementById('migMpSearch').addEventListener('input', e => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => { this.searchMp = e.target.value.toLowerCase(); this.renderList(); }, 200);
+    });
     createMultiSelect('migPartyPills', getPartyMultiOptions(), vals => {
       this.filterParties = vals;
       this.renderList();
@@ -2157,6 +2193,12 @@ const MigrationView = {
     }
     if (this.filterTypes.length) {
       filtered = filtered.filter(d => this.filterTypes.includes(String(d.a)));
+    }
+    if (this.searchMp) {
+      filtered = filtered.filter(d => d.t.some(step => {
+        const mpName = DATA.mpNames[step[1]] || '';
+        return mpName.toLowerCase().includes(this.searchMp);
+      }));
     }
     const shown = filtered.slice(0, 200);
 
@@ -2262,8 +2304,8 @@ const CatalogView = {
           const paid = entry[3] || 0;
           const vol = entry[4] || 0;
           const color = getPartyColor(party);
-          const astInfo = total ? ` | ${paid}&#9679;${vol}&#9675;` : '';
-          html += `<td><span class="party-tag" style="background:${color}" title="${party}\n${total} пом. (${paid} платн. / ${vol} волонт.)">${shortenParty(party, 18)}</span></td>`;
+          const astBadge = total ? `<span class="ast-count-badge" title="${paid} платн. / ${vol} волонт." onclick="event.stopPropagation();toggleCatAst('${m.id}',${conv},this)">${total}</span>` : '';
+          html += `<td><span class="party-tag" style="background:${color}" title="${party}">${shortenParty(party, 18)}</span>${astBadge}</td>`;
         } else {
           html += '<td></td>';
         }
@@ -2280,6 +2322,41 @@ const CatalogView = {
 
 function initProfile() {
   // Now handled by CatalogView
+}
+
+let activeCatAstPopup = null;
+function toggleCatAst(mpId, conv, badge) {
+  // Close existing popup
+  if (activeCatAstPopup) { activeCatAstPopup.remove(); activeCatAstPopup = null; }
+
+  const p = DATA.mpProfiles[mpId];
+  if (!p || !p.a || !p.a[conv]) return;
+  const astList = p.a[conv];
+
+  const popup = document.createElement('div');
+  popup.className = 'cat-ast-popup';
+  popup.innerHTML = `<div style="font-weight:500;margin-bottom:4px;color:var(--text)">${p.n} — ${conv} скл.</div>` +
+    astList.map(a => {
+      const icon = a[1] ? '●' : '○';
+      const clr = a[1] ? 'var(--accent)' : 'var(--text3)';
+      const lbl = a[1] ? 'платний' : 'волонтер';
+      return `<div title="${lbl}"><span style="color:${clr}">${icon}</span> ${a[0]}</div>`;
+    }).join('');
+
+  document.body.appendChild(popup);
+  const rect = badge.getBoundingClientRect();
+  popup.style.left = Math.min(rect.left, window.innerWidth - popup.offsetWidth - 10) + 'px';
+  popup.style.top = (rect.bottom + 4 + window.scrollY) + 'px';
+  activeCatAstPopup = popup;
+
+  const closeHandler = (e) => {
+    if (!popup.contains(e.target) && e.target !== badge) {
+      popup.remove();
+      activeCatAstPopup = null;
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeHandler), 0);
 }
 
 function showProfile(mpId) {
@@ -2326,12 +2403,29 @@ function showProfile(mpId) {
     const vol = entry[4] || 0;
     const years = DATA.convYears[conv] || '';
     const paidInfo = paid || vol ? ` <span style="font-size:0.72rem;color:var(--text3)">(${paid} платн. / ${vol} волонт.)</span>` : '';
+
+    // Build assistant list if available
+    let astHtml = '';
+    const astList = p.a && p.a[conv];
+    if (astList && astList.length) {
+      const astId = `ast_${mpId}_${conv}`;
+      astHtml = `<div style="margin-top:4px"><a href="#" onclick="event.preventDefault();var el=document.getElementById('${astId}');el.style.display=el.style.display==='none'?'block':'none'" style="font-size:0.72rem;color:var(--accent);text-decoration:none">&#9654; Показати помічників (${astList.length})</a><div id="${astId}" style="display:none;margin-top:4px;padding-left:8px;border-left:2px solid #e8e4df">`;
+      astList.forEach(a => {
+        const typeIcon = a[1] ? '●' : '○';
+        const typeColor = a[1] ? 'var(--accent)' : 'var(--text3)';
+        const typeLabel = a[1] ? 'платний' : 'на гром. засадах';
+        astHtml += `<div style="font-size:0.72rem;padding:1px 0;color:var(--text2)" title="${typeLabel}"><span style="color:${typeColor}">${typeIcon}</span> ${a[0]}</div>`;
+      });
+      astHtml += '</div></div>';
+    }
+
     timelineHtml += `
       <div class="timeline-item">
         <div class="timeline-dot" style="background:${getPartyColor(party)}"></div>
         <div class="timeline-conv">${conv} скликання ${years ? `(${years})` : ''}</div>
         <div class="timeline-party">${party}</div>
         <div class="timeline-details">${astCount} помічників${paidInfo}</div>
+        ${astHtml}
       </div>
     `;
   });
