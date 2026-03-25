@@ -2442,6 +2442,26 @@ function showProfile(mpId) {
     connectedHtml += '</div>';
   }
 
+  let similarHtml = '';
+  if (p.s && p.s.length > 0) {
+    similarHtml = '<h4 style="font-size:0.85rem;font-weight:450;margin-top:1.5rem;margin-bottom:0.5rem">Найсхожіші за партійною траєкторією</h4>';
+    similarHtml += '<div style="display:flex;flex-direction:column;gap:4px">';
+    p.s.forEach(([score, otherId]) => {
+      const op = DATA.mpProfiles[otherId];
+      if (!op) return;
+      // Build mini trajectory dots
+      const dots = op.c.map(e =>
+        `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${getPartyColor(e[1])};margin:0 1px" title="${romanNums[e[0]]}: ${e[1]}"></span>`
+      ).join('');
+      similarHtml += `<div style="display:flex;align-items:center;gap:0.5rem;padding:3px 0;border-bottom:1px solid #f0ece8;cursor:pointer" onclick="showProfile('${otherId}')">
+        <span style="font-size:0.7rem;color:white;background:${score===100?'#6ba88e':'var(--accent)'};border-radius:4px;padding:1px 5px;min-width:32px;text-align:center">${score}%</span>
+        <span style="font-size:0.82rem;color:var(--text);flex:1">${op.n.split(' ').slice(0,2).join(' ')}</span>
+        <span>${dots}</span>
+      </div>`;
+    });
+    similarHtml += '</div>';
+  }
+
   detail.innerHTML = `
     <div class="profile-header">
       <div class="profile-avatar">${initials}</div>
@@ -2453,6 +2473,7 @@ function showProfile(mpId) {
     <h4 style="font-size:0.85rem;font-weight:450;margin-bottom:0.5rem">Історія скликань</h4>
     <div class="timeline">${timelineHtml}</div>
     ${connectedHtml}
+    ${similarHtml}
   `;
 }
 
@@ -2595,7 +2616,34 @@ const StatsView = {
     });
     html += '</div></div>';
 
-    // Card 8: Summary numbers
+    // Card 8: Similar trajectories
+    html += '<div class="card stat-card"><div class="stat-card-title">Найсхожіші партійні траєкторії</div>';
+    html += '<div class="stat-sub" style="margin-bottom:0.75rem">Пари депутатів, які проходили через ті самі партії в тих самих скликаннях</div>';
+    html += '<div class="stat-list">';
+    const pairs = DATA.similarPairs || [];
+    pairs.slice(0, 20).forEach((pair, i) => {
+      const pA = DATA.mpProfiles[pair.a];
+      const pB = DATA.mpProfiles[pair.b];
+      if (!pA || !pB) return;
+      const trajA = pA.c.map(e => `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${getPartyColor(e[1])};margin:0 1px" title="${romanNums[e[0]]}: ${e[1]}"></span>`).join('');
+      html += `<div class="stat-list-item">
+        <span class="stat-rank">${pair.sc}%</span>
+        <span class="stat-list-name" style="flex:1">
+          <a href="#" onclick="event.preventDefault();showProfile('${pair.a}')" style="color:var(--accent);text-decoration:none">${pA.n.split(' ').slice(0,2).join(' ')}</a>
+          <span style="color:var(--text3);margin:0 4px">↔</span>
+          <a href="#" onclick="event.preventDefault();showProfile('${pair.b}')" style="color:var(--accent);text-decoration:none">${pB.n.split(' ').slice(0,2).join(' ')}</a>
+          <span style="margin-left:6px">${trajA}</span>
+        </span>
+        <span class="stat-list-value" style="white-space:nowrap">${pair.mc} скл.</span>
+      </div>`;
+    });
+    html += '</div>';
+    if (pairs.length > 20) {
+      html += `<div style="text-align:center;margin-top:0.5rem"><button class="btn" onclick="showSimilarPairsList()">Показати всі ${pairs.length} пар</button></div>`;
+    }
+    html += '</div>';
+
+    // Card 9: Summary numbers
     html += '<div class="card stat-card"><div class="stat-card-title">Загальна статистика</div>';
     const m = DATA.meta;
     const migSum = DATA.assistantMigration.summary;
@@ -2683,6 +2731,24 @@ function showPartyChangersList() {
     html += `<div class="mp-list-item"><span>${m.n} <span style="color:var(--text3);font-size:0.72rem">(${m.ch} змін, ${m.cc} скл.)</span></span><span><a href="#" onclick="event.preventDefault();closeModal();showProfile('${m.id}')">Профіль</a></span></div>`;
   });
   openModal('Депутати-мігранти', html);
+}
+
+function showSimilarPairsList() {
+  const pairs = DATA.similarPairs || [];
+  let html = `<p style="font-size:0.85rem;color:var(--text2);margin-bottom:1rem">${pairs.length} пар депутатів зі схожими партійними траєкторіями (≥75% збіг)</p>`;
+  pairs.forEach(pair => {
+    const pA = DATA.mpProfiles[pair.a];
+    const pB = DATA.mpProfiles[pair.b];
+    if (!pA || !pB) return;
+    html += `<div class="mp-list-item">
+      <span>${pA.n.split(' ').slice(0,2).join(' ')} ↔ ${pB.n.split(' ').slice(0,2).join(' ')} <span style="color:var(--text3);font-size:0.72rem">(${pair.mc} спільних скл., ${pair.sc}%)</span></span>
+      <span style="display:flex;gap:4px">
+        <a href="#" onclick="event.preventDefault();closeModal();showProfile('${pair.a}')">↗</a>
+        <a href="#" onclick="event.preventDefault();closeModal();showProfile('${pair.b}')">↗</a>
+      </span>
+    </div>`;
+  });
+  openModal('Схожі партійні траєкторії', html);
 }
 
 // ============================================================
