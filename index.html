@@ -2590,12 +2590,26 @@ function showProfile(mpId) {
       astHtml += '</div></div>';
     }
 
+    // Faction history for this convocation
+    let factionHtml = '';
+    const frList = p.fr && p.fr[conv];
+    if (frList && frList.length) {
+      const fId = `fr_${mpId}_${conv}`;
+      factionHtml = `<div style="margin-top:4px"><a href="#" onclick="event.preventDefault();var el=document.getElementById('${fId}');el.style.display=el.style.display==='none'?'block':'none'" style="font-size:0.72rem;color:#5b8a9a;text-decoration:none">&#9654; Фракції (${frList.length})</a><div id="${fId}" style="display:none;margin-top:4px;padding-left:8px;border-left:2px solid #d4e3e8">`;
+      frList.forEach(fr => {
+        const dateRange = fr.di ? `${fr.di}${fr.do ? ' → ' + fr.do : ' → ...'}` : '';
+        factionHtml += `<div style="font-size:0.72rem;padding:2px 0;color:var(--text2)"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${getPartyColor(fr.f)};margin-right:3px"></span>${fr.f} <span style="color:var(--text3);font-size:0.65rem">${dateRange}</span></div>`;
+      });
+      factionHtml += '</div></div>';
+    }
+
     timelineHtml += `
       <div class="timeline-item">
         <div class="timeline-dot" style="background:${getPartyColor(party)}"></div>
         <div class="timeline-conv">${conv} скликання ${years ? `(${years})` : ''}</div>
         <div class="timeline-party">${party}</div>
         <div class="timeline-details">${astCount} помічників${paidInfo}</div>
+        ${factionHtml}
         ${astHtml}
       </div>
     `;
