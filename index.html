@@ -2113,6 +2113,7 @@ const MigrationView = {
   filterConvs: [],
   filterTypes: [],
   searchMp: '',
+  searchAst: '',
 
   init() {
     this.buildControls();
@@ -2125,14 +2126,19 @@ const MigrationView = {
     const ctrl = document.getElementById('migrationControls');
     ctrl.innerHTML = `
       <input type="text" class="search-input" id="migMpSearch" placeholder="Пошук за прізвищем депутата...">
+      <input type="text" class="search-input" id="migAstSearch" placeholder="Пошук за прізвищем помічника...">
       <div style="width:100%"><span class="control-label">Партії:</span><div id="migPartyPills"></div></div>
       <div><span class="control-label">Скликання:</span><div id="migConvPills"></div></div>
       <div><span class="control-label">Тип:</span><div id="migTypePills"></div></div>
     `;
-    let searchTimeout;
+    let searchTimeout, searchTimeout2;
     document.getElementById('migMpSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => { this.searchMp = e.target.value.toLowerCase(); this.renderList(); }, 200);
+    });
+    document.getElementById('migAstSearch').addEventListener('input', e => {
+      clearTimeout(searchTimeout2);
+      searchTimeout2 = setTimeout(() => { this.searchAst = e.target.value.toLowerCase(); this.renderList(); }, 200);
     });
     createMultiSelect('migPartyPills', getPartyMultiOptions(), vals => {
       this.filterParties = vals;
@@ -2243,6 +2249,9 @@ const MigrationView = {
         const mpName = DATA.mpNames[step[1]] || '';
         return mpName.toLowerCase().includes(this.searchMp);
       }));
+    }
+    if (this.searchAst) {
+      filtered = filtered.filter(d => d.n.toLowerCase().includes(this.searchAst));
     }
     const shown = filtered.slice(0, 200);
 
