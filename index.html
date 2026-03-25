@@ -1866,21 +1866,19 @@ const NetworkView = {
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      // Selected assistant ring
+      // Selected node ring (MPs and assistants)
       if (this.selectedNodes.has(n.id)) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 3, 0, Math.PI * 2);
-        ctx.strokeStyle = '#e07020';
+        ctx.strokeStyle = isMp ? '#5b8a9a' : '#e07020';
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.lineWidth = 0.5;
-        // Label for selected assistants
-        if (!isMp) {
-          ctx.font = '9px "Segoe UI", system-ui, sans-serif';
-          ctx.fillStyle = '#333';
-          ctx.textAlign = 'center';
-          ctx.fillText(n.n.split(' ').slice(0, 2).join(' '), n.x, n.y - r - 6);
-        }
+        // Label for selected nodes
+        ctx.font = (isMp ? '10' : '9') + 'px "Segoe UI", system-ui, sans-serif';
+        ctx.fillStyle = '#333';
+        ctx.textAlign = 'center';
+        ctx.fillText(n.n.split(' ').slice(0, 2).join(' '), n.x, n.y - r - 6);
       }
       // Label for hovered, searched, or selection-connected MPs
       const showLabel = isMp && (n === hoveredNode || (searchTerm && n.n.toLowerCase().includes(searchTerm)) || (hasSelection && highlighted.has(n.id)));
@@ -1981,7 +1979,7 @@ const NetworkView = {
         if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
           const pos = getMousePos(e);
           const node = findNode(pos);
-          if (node && node.t === 'a') {
+          if (node) {
             if (this.selectedNodes.has(node.id)) this.selectedNodes.delete(node.id);
             else this.selectedNodes.add(node.id);
             this.draw();
