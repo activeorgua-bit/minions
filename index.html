@@ -1751,6 +1751,12 @@ const NetworkView = {
     // Re-filter links to only include nodes that passed both filters
     const finalLinks = filteredLinks.filter(l => nodeMap.has(l.s) && nodeMap.has(l.r));
 
+    // Remove orphan assistants (no connected MPs after party/conv filter)
+    const connectedAssistants = new Set(finalLinks.map(l => l.r));
+    for (const [id, n] of nodeMap) {
+      if (n.t === 'a' && !connectedAssistants.has(id)) nodeMap.delete(id);
+    }
+
     this.nodes = Array.from(nodeMap.values());
     this.links = finalLinks.map(l => ({
       source: nodeMap.get(l.s),
@@ -1880,8 +1886,8 @@ const NetworkView = {
         ctx.textAlign = 'center';
         ctx.fillText(n.n.split(' ').slice(0, 2).join(' '), n.x, n.y - r - 6);
       }
-      // Label for hovered, searched, or selection-connected MPs
-      const showLabel = isMp && (n === hoveredNode || (searchTerm && n.n.toLowerCase().includes(searchTerm)) || (hasSelection && highlighted.has(n.id)));
+      // Label for hovered, searched, or selection-connected MPs (skip if already labeled by selection ring)
+      const showLabel = isMp && !this.selectedNodes.has(n.id) && (n === hoveredNode || (searchTerm && n.n.toLowerCase().includes(searchTerm)) || (hasSelection && highlighted.has(n.id)));
       if (showLabel) {
         ctx.font = '10px "Segoe UI", system-ui, sans-serif';
         ctx.fillStyle = '#333';
