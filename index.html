@@ -2429,6 +2429,7 @@ function showProfile(mpId) {
   }
 
   detail.style.display = 'block';
+  setTimeout(() => detail.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
   const initials = p.n.split(' ').map(w => w[0]).join('').slice(0, 2);
 
