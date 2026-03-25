@@ -903,6 +903,7 @@ input[type="range"]::-webkit-slider-thumb {
       <div class="tab" data-view="migration">Аналіз помічників</div>
       <div class="tab" data-view="profile">Каталог депутатів</div>
       <div class="tab" data-view="trajectory">Траєкторії</div>
+      <div class="tab" data-view="factions">Фракції</div>
       <div class="tab" data-view="stats">Статистика</div>
     </nav>
     <div class="stats-bar" id="statsBar"></div>
@@ -1085,7 +1086,31 @@ input[type="range"]::-webkit-slider-thumb {
     </div>
   </div>
 
-  <!-- View 7: Statistics -->
+  <!-- View 7b: Factions -->
+  <div class="view" id="view-factions">
+    <h2 class="view-title">Фракції та депутатські групи</h2>
+    <p class="view-desc">Динаміка переходів між фракціями всередині скликань</p>
+    <div class="controls" id="factionControls"></div>
+    <div class="card" id="factionChart" style="min-height:400px"></div>
+    <div class="card" style="margin-top:1rem">
+      <h3 style="font-size:1rem;margin-bottom:0.8rem">Потоки між фракціями</h3>
+      <div id="factionFlows"></div>
+    </div>
+    <div class="explainer" onclick="this.classList.toggle('open')">
+      <div class="explainer-toggle"><span class="explainer-arrow">&#9654;</span> Як читати цю діаграму?</div>
+      <div class="explainer-body">
+        <p><b>Горизонтальна стовпчикова діаграма</b> показує чисельність кожної фракції/групи на обрану дату.</p>
+        <ul>
+          <li><b>Слайдер дати</b> — рухайте, щоб побачити, як змінювався розподіл депутатів по фракціях протягом скликання</li>
+          <li><b>Потоки</b> — таблиця внизу показує, скільки депутатів перейшли з однієї фракції до іншої</li>
+          <li>Натисніть на потік, щоб побачити список прізвищ</li>
+        </ul>
+        <p>Фракції часто змінювались всередині одного скликання: депутати переходили між фракціями, групи створювались і розпускались.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- View 8: Statistics -->
   <div class="view" id="view-stats">
     <h2 class="view-title">Статистика</h2>
     <p class="view-desc">Ключові метрики збереження та міграції депутатів і помічників</p>
@@ -1347,6 +1372,8 @@ const SankeyView = {
   initialized: false,
   selectedTransition: 'all',
   showIsolated: false,
+  convFrom: 1,
+  convTo: 9,
 
   init() {
     this.buildControls();
@@ -1356,24 +1383,35 @@ const SankeyView = {
 
   buildControls() {
     const ctrl = document.getElementById('sankeyControls');
-    const transitions = DATA.mpMigrations.transitions;
-    let html = '<div class="control-group"><span class="control-label">Перехід:</span>';
-    html += '<select id="sankeyTransition"><option value="all">Усі скликання</option>';
-    transitions.forEach(t => {
-      const [a, b] = t.split('→');
-      html += `<option value="${t}">${a} → ${b} скликання</option>`;
-    });
-    html += '</select></div>';
+    const allConvs = DATA.meta.convocations;
+    const minC = allConvs[0], maxC = allConvs[allConvs.length - 1];
+    this.convFrom = minC;
+    this.convTo = maxC;
+
+    let html = '<div class="control-group"><span class="control-label">Скликання:</span>';
+    html += `<input type="range" id="sankeyConvFrom" min="${minC}" max="${maxC}" value="${minC}" style="width:80px">`;
+    html += `<span id="sankeyRangeLabel" style="font-weight:600;min-width:60px;text-align:center">${romanNums[minC]} – ${romanNums[maxC]}</span>`;
+    html += `<input type="range" id="sankeyConvTo" min="${minC}" max="${maxC}" value="${maxC}" style="width:80px">`;
+    html += '</div>';
     html += '<div class="control-group"><span class="control-label">Мін. депутатів:</span>';
     html += '<input type="range" id="sankeyMinFlow" min="1" max="20" value="3">';
     html += '<span id="sankeyMinVal">3</span></div>';
     html += '<div class="control-group"><label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;color:var(--text2)"><input type="checkbox" id="sankeyShowIsolated"> Показати партії без міграцій</label></div>';
     ctrl.innerHTML = html;
 
-    document.getElementById('sankeyTransition').addEventListener('change', e => {
-      this.selectedTransition = e.target.value;
+    const updateRange = () => {
+      let from = parseInt(document.getElementById('sankeyConvFrom').value);
+      let to = parseInt(document.getElementById('sankeyConvTo').value);
+      if (from > to) { const tmp = from; from = to; to = tmp; }
+      if (from === to && to < maxC) to = from + 1;
+      else if (from === to) from = to - 1;
+      this.convFrom = from;
+      this.convTo = to;
+      document.getElementById('sankeyRangeLabel').textContent = `${romanNums[from]} – ${romanNums[to]}`;
       this.render();
-    });
+    };
+    document.getElementById('sankeyConvFrom').addEventListener('input', updateRange);
+    document.getElementById('sankeyConvTo').addEventListener('input', updateRange);
     document.getElementById('sankeyMinFlow').addEventListener('input', e => {
       document.getElementById('sankeyMinVal').textContent = e.target.value;
       this.render();
@@ -1388,25 +1426,20 @@ const SankeyView = {
     const container = document.getElementById('sankeyChart');
     container.innerHTML = '';
     const minFlow = parseInt(document.getElementById('sankeyMinFlow')?.value || '3');
-    const selTrans = this.selectedTransition;
+    const { convFrom, convTo } = this;
+
+    // Filter transitions to selected convocation range
+    const transitions = DATA.mpMigrations.transitions.filter(t => {
+      const [a, b] = t.split('→').map(Number);
+      return a >= convFrom && b <= convTo;
+    });
 
     // Filter flows
-    let flows = DATA.mpMigrations.flows.filter(f => f.count >= minFlow);
-    if (selTrans !== 'all') {
-      flows = flows.filter(f => f.transition === selTrans);
-    }
+    let flows = DATA.mpMigrations.flows.filter(f => f.count >= minFlow && transitions.includes(f.transition));
 
     if (flows.length === 0) {
       container.innerHTML = '<div class="loading">Немає даних для обраних фільтрів</div>';
       return;
-    }
-
-    // Determine which transitions to show
-    let transitions;
-    if (selTrans === 'all') {
-      transitions = DATA.mpMigrations.transitions;
-    } else {
-      transitions = [selTrans];
     }
 
     // Build sankey nodes and links
@@ -2999,6 +3032,172 @@ const TrajectoryView = {
 };
 
 // ============================================================
+// VIEW: FACTIONS
+// ============================================================
+const FactionView = {
+  initialized: false,
+  selectedConv: 9,
+  snapshotIndex: -1,
+
+  init() {
+    this.buildControls();
+    this.render();
+    this.initialized = true;
+  },
+
+  buildControls() {
+    const ctrl = document.getElementById('factionControls');
+    const fConvs = Object.keys(DATA.factionData || {}).map(Number).sort();
+    if (fConvs.length === 0) {
+      ctrl.innerHTML = '<div class="loading">Дані про фракції відсутні</div>';
+      return;
+    }
+    this.selectedConv = fConvs[fConvs.length - 1];
+
+    let html = '<div class="control-group"><span class="control-label">Скликання:</span>';
+    html += '<select id="factionConvSelect">';
+    fConvs.forEach(c => {
+      html += `<option value="${c}" ${c === this.selectedConv ? 'selected' : ''}>${romanNums[c]} скликання</option>`;
+    });
+    html += '</select></div>';
+    html += '<div class="control-group" style="flex:1"><span class="control-label">Дата:</span>';
+    html += '<input type="range" id="factionDateSlider" min="0" max="0" value="0" style="flex:1">';
+    html += '<span id="factionDateLabel" style="min-width:90px;text-align:center;font-size:0.85rem;font-weight:600"></span>';
+    html += '</div>';
+    ctrl.innerHTML = html;
+
+    document.getElementById('factionConvSelect').addEventListener('change', e => {
+      this.selectedConv = parseInt(e.target.value);
+      this.snapshotIndex = -1;
+      this.render();
+    });
+    document.getElementById('factionDateSlider').addEventListener('input', e => {
+      this.snapshotIndex = parseInt(e.target.value);
+      this.renderSnapshot();
+    });
+  },
+
+  render() {
+    const fd = (DATA.factionData || {})[String(this.selectedConv)];
+    if (!fd) {
+      document.getElementById('factionChart').innerHTML = '<div class="loading">Немає даних</div>';
+      return;
+    }
+
+    // Set up date slider
+    const slider = document.getElementById('factionDateSlider');
+    slider.max = fd.snapshots.length - 1;
+    if (this.snapshotIndex < 0 || this.snapshotIndex >= fd.snapshots.length) {
+      this.snapshotIndex = fd.snapshots.length - 1;
+    }
+    slider.value = this.snapshotIndex;
+
+    this.renderSnapshot();
+    this.renderFlows(fd);
+  },
+
+  renderSnapshot() {
+    const fd = (DATA.factionData || {})[String(this.selectedConv)];
+    if (!fd) return;
+    const snap = fd.snapshots[this.snapshotIndex];
+    if (!snap) return;
+
+    document.getElementById('factionDateLabel').textContent = snap.date;
+
+    const container = document.getElementById('factionChart');
+    container.innerHTML = '';
+
+    // Sort factions by count
+    const entries = Object.entries(snap.factions).sort((a, b) => b[1] - a[1]);
+    const maxCount = entries.length ? entries[0][1] : 1;
+
+    const width = container.clientWidth - 40;
+    const barH = 28;
+    const gap = 4;
+    const labelW = 220;
+    const height = entries.length * (barH + gap) + 40;
+
+    const svg = d3.select(container).append('svg')
+      .attr('width', width + 20).attr('height', height)
+      .append('g').attr('transform', 'translate(10,20)');
+
+    const barW = width - labelW - 50;
+
+    entries.forEach(([faction, count], i) => {
+      const y = i * (barH + gap);
+      const w = (count / maxCount) * barW;
+      const color = this.getFactionColor(faction);
+
+      svg.append('rect')
+        .attr('x', labelW).attr('y', y)
+        .attr('width', w).attr('height', barH)
+        .attr('fill', color)
+        .attr('rx', 3)
+        .attr('opacity', 0.8);
+
+      svg.append('text')
+        .attr('x', labelW - 6).attr('y', y + barH / 2)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', 'end')
+        .style('font-size', '0.75rem')
+        .style('fill', 'var(--text2)')
+        .text(shortenParty(faction, 32))
+        .append('title').text(faction);
+
+      svg.append('text')
+        .attr('x', labelW + w + 6).attr('y', y + barH / 2)
+        .attr('dy', '0.35em')
+        .style('font-size', '0.8rem')
+        .style('fill', 'var(--text1)')
+        .style('font-weight', '600')
+        .text(count);
+    });
+  },
+
+  renderFlows(fd) {
+    const container = document.getElementById('factionFlows');
+    if (!fd.flows || fd.flows.length === 0) {
+      container.innerHTML = '<p style="color:var(--text3)">Немає переходів</p>';
+      return;
+    }
+
+    let html = '<table class="catalog-table" style="font-size:0.8rem"><thead><tr><th>З фракції</th><th>До фракції</th><th>Депутатів</th></tr></thead><tbody>';
+    fd.flows.slice(0, 30).forEach(f => {
+      html += `<tr style="cursor:pointer" onclick="FactionView.showFlowMps('${escHtml(f.from)}','${escHtml(f.to)}',${this.selectedConv})" title="Натисніть для списку">`;
+      html += `<td title="${f.from}">${shortenParty(f.from, 35)}</td>`;
+      html += `<td title="${f.to}">${shortenParty(f.to, 35)}</td>`;
+      html += `<td style="font-weight:600;text-align:center">${f.count}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  },
+
+  showFlowMps(from, to, conv) {
+    const fd = (DATA.factionData || {})[String(conv)];
+    if (!fd) return;
+    const flow = fd.flows.find(f => f.from === from && f.to === to);
+    if (!flow) return;
+    let html = `<p style="font-size:0.85rem;color:var(--text2)">${flow.count} депутатів перейшли з «${shortenParty(from, 30)}» до «${shortenParty(to, 30)}»</p>`;
+    flow.mps.forEach(name => {
+      html += `<div class="mp-list-item"><span>${name}</span></div>`;
+    });
+    openModal(`Перехід між фракціями (${romanNums[conv]})`, html);
+  },
+
+  getFactionColor(name) {
+    // Use consistent hashing for faction colors
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+    h = Math.abs(h);
+    return `hsl(${h % 360}, 50%, 55%)`;
+  },
+};
+
+function escHtml(s) {
+  return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// ============================================================
 const StatsView = {
   initialized: false,
 
@@ -3307,6 +3506,7 @@ async function init() {
   views.migration = MigrationView;
   views.profile = CatalogView;
   views.trajectory = TrajectoryView;
+  views.factions = FactionView;
   views.stats = StatsView;
 
   // Inject party legends on all views
