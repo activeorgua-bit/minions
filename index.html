@@ -902,6 +902,7 @@ input[type="range"]::-webkit-slider-thumb {
       <div class="tab" data-view="network">Мережа помічників</div>
       <div class="tab" data-view="migration">Аналіз помічників</div>
       <div class="tab" data-view="profile">Каталог депутатів</div>
+      <div class="tab" data-view="trajectory">Траєкторії</div>
       <div class="tab" data-view="stats">Статистика</div>
     </nav>
     <div class="stats-bar" id="statsBar"></div>
@@ -1041,7 +1042,50 @@ input[type="range"]::-webkit-slider-thumb {
     <div class="card profile-container" id="profileDetail" style="display:none;margin-top:1.5rem"></div>
   </div>
 
-  <!-- View 6: Statistics -->
+  <!-- View 6: Trajectory Network -->
+  <div class="view" id="view-trajectory">
+    <h2 class="view-title">Мережа партійних траєкторій</h2>
+    <p class="view-desc">Кластери депутатів зі схожими партійними шляхами. Чим ближче вузли — тим схожіші траєкторії.</p>
+    <div class="controls" id="trajControls">
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <span class="control-label">Мін. схожість:</span>
+        <input type="range" id="trajMinSim" min="50" max="100" value="100" style="width:120px">
+        <span id="trajMinSimVal">100%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <span class="control-label">Мін. скликань:</span>
+        <input type="range" id="trajMinConvs" min="2" max="6" value="3" style="width:80px">
+        <span id="trajMinConvsVal">3</span>
+      </div>
+      <input type="text" class="search-input" id="trajSearch" placeholder="Пошук депутата...">
+    </div>
+    <div class="controls">
+      <div style="width:100%"><span class="control-label">Партії:</span><div id="trajPartyPills"></div></div>
+    </div>
+    <div class="card" id="trajContainer" style="padding:0;position:relative">
+      <canvas id="trajCanvas" style="display:block;cursor:grab"></canvas>
+      <div class="graph-legend" style="position:absolute;bottom:16px;left:16px;background:rgba(255,255,255,0.92);padding:8px 12px;border-radius:8px;font-size:0.72rem">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px"><div style="width:12px;height:12px;border-radius:50%;background:var(--accent)"></div> Депутат (колір = остання партія)</div>
+        <div style="display:flex;align-items:center;gap:4px"><div style="width:12px;height:2px;background:#999"></div> Зв'язок за схожістю траєкторії</div>
+        <div style="margin-top:4px;opacity:0.6">Перетягуйте вузли. Подвійний клік → профіль</div>
+      </div>
+    </div>
+    <div class="explainer" onclick="this.classList.toggle('open')">
+      <div class="explainer-toggle"><span class="explainer-arrow">&#9654;</span> Як читати цю діаграму?</div>
+      <div class="explainer-body">
+        <p><b>Мережа траєкторій</b> показує кластери депутатів, що проходили через ті самі партії в тих самих скликаннях.</p>
+        <ul>
+          <li><b>Вузли</b> — депутати. Колір = остання партія. Розмір = кількість скликань</li>
+          <li><b>Лінії</b> — зв'язок між депутатами зі схожими траєкторіями (≥ поріг схожості)</li>
+          <li><b>Кластери</b> — групи формуються автоматично. Депутати одного кластеру йшли однаковим партійним шляхом</li>
+          <li><b>100% схожість</b> — ідентичний партійний шлях у всіх спільних скликаннях</li>
+        </ul>
+        <p>Використовуйте повзунки для фільтрації. «Мін. скликань» — мінімальна кількість скликань для включення депутата.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- View 7: Statistics -->
   <div class="view" id="view-stats">
     <h2 class="view-title">Статистика</h2>
     <p class="view-desc">Ключові метрики збереження та міграції депутатів і помічників</p>
@@ -2494,6 +2538,373 @@ function updateStats() {
 // ============================================================
 // VIEW 6: STATISTICS
 // ============================================================
+// VIEW 6b: TRAJECTORY NETWORK
+// ============================================================
+const TrajectoryView = {
+  initialized: false,
+  canvas: null,
+  ctx: null,
+  nodes: [],
+  links: [],
+  simulation: null,
+  transform: { x: 0, y: 0, k: 1 },
+  selectedNodes: new Set(),
+  hoveredNode: null,
+  searchTerm: '',
+  minSim: 100,
+  minConvs: 3,
+  filterParties: [],
+  w: 0,
+  h: 0,
+
+  init() {
+    this.canvas = document.getElementById('trajCanvas');
+    this.ctx = this.canvas.getContext('2d');
+
+    // Controls
+    const simSlider = document.getElementById('trajMinSim');
+    const simVal = document.getElementById('trajMinSimVal');
+    simSlider.addEventListener('input', () => {
+      this.minSim = +simSlider.value;
+      simVal.textContent = simSlider.value + '%';
+      this.loadData();
+    });
+
+    const convSlider = document.getElementById('trajMinConvs');
+    const convVal = document.getElementById('trajMinConvsVal');
+    convSlider.addEventListener('input', () => {
+      this.minConvs = +convSlider.value;
+      convVal.textContent = convSlider.value;
+      this.loadData();
+    });
+
+    let searchTimeout;
+    document.getElementById('trajSearch').addEventListener('input', e => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => { this.searchTerm = e.target.value.toLowerCase(); this.draw(); }, 200);
+    });
+
+    createMultiSelect('trajPartyPills', getPartyMultiOptions(), vals => {
+      this.filterParties = vals;
+      this.loadData();
+    });
+
+    this.loadData();
+    this.setupInteractions();
+    this.initialized = true;
+  },
+
+  loadData() {
+    this.selectedNodes.clear();
+    const profiles = DATA.mpProfiles;
+    const fp = this.filterParties;
+
+    // Build nodes: MPs with enough convocations
+    const nodeMap = new Map();
+    for (const [id, p] of Object.entries(profiles)) {
+      if (p.c.length < this.minConvs) continue;
+      if (!p.s || p.s.length === 0) continue;
+      const lastParty = p.c[p.c.length - 1][1];
+      if (fp.length && !p.c.some(e => fp.includes(e[1]))) continue;
+      nodeMap.set(id, {
+        id, n: p.n, p: lastParty, cc: p.c.length,
+        traj: p.c.map(e => ({ c: e[0], p: e[1] })),
+        x: undefined, y: undefined, vx: 0, vy: 0
+      });
+    }
+
+    // Build links from profile similarity data
+    const links = [];
+    const seen = new Set();
+    for (const [id, p] of Object.entries(profiles)) {
+      if (!nodeMap.has(id) || !p.s) continue;
+      for (const [score, otherId] of p.s) {
+        if (score < this.minSim) continue;
+        if (!nodeMap.has(otherId)) continue;
+        const pairKey = id < otherId ? `${id}-${otherId}` : `${otherId}-${id}`;
+        if (seen.has(pairKey)) continue;
+        seen.add(pairKey);
+        links.push({ source: id, target: otherId, score });
+      }
+    }
+
+    // Remove isolated nodes (no links after filtering)
+    const connected = new Set();
+    links.forEach(l => { connected.add(l.source); connected.add(l.target); });
+    for (const [id] of nodeMap) {
+      if (!connected.has(id)) nodeMap.delete(id);
+    }
+
+    this.nodes = Array.from(nodeMap.values());
+    this.links = links.map(l => ({
+      source: nodeMap.get(l.source),
+      target: nodeMap.get(l.target),
+      score: l.score
+    })).filter(l => l.source && l.target);
+
+    // Status text
+    const container = document.getElementById('trajContainer');
+    let statusEl = container.querySelector('.traj-status');
+    if (!statusEl) {
+      statusEl = document.createElement('div');
+      statusEl.className = 'traj-status';
+      statusEl.style.cssText = 'position:absolute;top:12px;right:16px;font-size:0.72rem;color:var(--text3)';
+      container.appendChild(statusEl);
+    }
+    statusEl.textContent = `${this.nodes.length} депутатів, ${this.links.length} зв'язків`;
+
+    this.resizeCanvas();
+    this.startSimulation();
+  },
+
+  resizeCanvas() {
+    const container = document.getElementById('trajContainer');
+    const w = container.clientWidth;
+    const h = 650;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = w * dpr;
+    this.canvas.height = h * dpr;
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.w = w;
+    this.h = h;
+  },
+
+  startSimulation() {
+    if (this.simulation) this.simulation.stop();
+    this.transform = { x: 0, y: 0, k: 1 };
+
+    this.nodes.forEach(n => {
+      n.x = this.w / 2 + (Math.random() - 0.5) * this.w * 0.7;
+      n.y = this.h / 2 + (Math.random() - 0.5) * this.h * 0.7;
+    });
+
+    this.simulation = d3.forceSimulation(this.nodes)
+      .force('charge', d3.forceManyBody().strength(-40).distanceMax(300))
+      .force('link', d3.forceLink(this.links).id(d => d.id).distance(d => d.score === 100 ? 30 : 60).strength(d => d.score === 100 ? 0.7 : 0.3))
+      .force('center', d3.forceCenter(this.w / 2, this.h / 2))
+      .force('collision', d3.forceCollide().radius(d => 4 + d.cc * 1.5))
+      .alphaDecay(0.02)
+      .velocityDecay(0.4)
+      .on('tick', () => this.draw());
+  },
+
+  draw() {
+    const { ctx, w, h, nodes, links, transform, searchTerm, hoveredNode } = this;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(transform.x, transform.y);
+    ctx.scale(transform.k, transform.k);
+
+    const highlighted = new Set();
+    const hasSelection = this.selectedNodes.size > 0;
+    if (hasSelection) {
+      this.selectedNodes.forEach(sid => {
+        highlighted.add(sid);
+        links.forEach(l => {
+          if (l.source?.id === sid) highlighted.add(l.target.id);
+          if (l.target?.id === sid) highlighted.add(l.source.id);
+        });
+      });
+    }
+    if (hoveredNode && !hasSelection) {
+      highlighted.add(hoveredNode.id);
+      links.forEach(l => {
+        if (l.source?.id === hoveredNode.id) highlighted.add(l.target.id);
+        if (l.target?.id === hoveredNode.id) highlighted.add(l.source.id);
+      });
+    }
+    const dimOthers = hasSelection || hoveredNode;
+
+    // Links
+    links.forEach(l => {
+      if (!l.source || !l.target) return;
+      const both = highlighted.has(l.source.id) && highlighted.has(l.target.id);
+      ctx.strokeStyle = both ? 'rgba(91,138,154,0.4)' : (dimOthers ? 'rgba(0,0,0,0.015)' : 'rgba(0,0,0,0.06)');
+      ctx.lineWidth = both ? 1.5 : 0.5;
+      ctx.beginPath();
+      ctx.moveTo(l.source.x, l.source.y);
+      ctx.lineTo(l.target.x, l.target.y);
+      ctx.stroke();
+    });
+
+    // Nodes
+    nodes.forEach(n => {
+      const r = 3 + n.cc * 1.2;
+      const color = getPartyColor(n.p);
+
+      let alpha = 1;
+      if (dimOthers && !highlighted.has(n.id)) alpha = 0.1;
+      if (searchTerm) {
+        if (n.n.toLowerCase().includes(searchTerm)) {
+          alpha = 1;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(91,138,154,0.25)';
+          ctx.fill();
+        } else if (!hoveredNode && !hasSelection) {
+          alpha = 0.15;
+        }
+      }
+
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Selection ring
+      if (this.selectedNodes.has(n.id)) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = '#5b8a9a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.lineWidth = 0.5;
+      }
+
+      // Labels for selected, hovered, searched, or connected
+      const showLabel = n === hoveredNode || this.selectedNodes.has(n.id) ||
+        (searchTerm && n.n.toLowerCase().includes(searchTerm)) ||
+        (hasSelection && highlighted.has(n.id));
+      if (showLabel) {
+        ctx.font = '10px "Segoe UI", system-ui, sans-serif';
+        ctx.fillStyle = '#333';
+        ctx.textAlign = 'center';
+        ctx.fillText(n.n.split(' ').slice(0, 2).join(' '), n.x, n.y - r - 5);
+      }
+
+      // Mini trajectory dots below large nodes when zoomed in
+      if (transform.k > 1.3 && n.traj.length >= 2 && (alpha > 0.5)) {
+        const dotR = 2.5;
+        const startX = n.x - (n.traj.length - 1) * 3.5;
+        n.traj.forEach((t, i) => {
+          ctx.beginPath();
+          ctx.arc(startX + i * 7, n.y + r + 6, dotR, 0, Math.PI * 2);
+          ctx.fillStyle = getPartyColor(t.p);
+          ctx.fill();
+        });
+      }
+    });
+
+    ctx.restore();
+  },
+
+  setupInteractions() {
+    const canvas = this.canvas;
+    let isDragging = false, isPanning = false, panStart = null, dragStartPos = null;
+
+    const getMousePos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left - this.transform.x) / this.transform.k,
+        y: (e.clientY - rect.top - this.transform.y) / this.transform.k
+      };
+    };
+
+    const findNode = (pos) => {
+      for (const n of this.nodes) {
+        const r = 3 + n.cc * 1.2 + 3;
+        const dx = n.x - pos.x, dy = n.y - pos.y;
+        if (dx * dx + dy * dy < r * r) return n;
+      }
+      return null;
+    };
+
+    canvas.addEventListener('mousedown', (e) => {
+      const pos = getMousePos(e);
+      dragStartPos = { x: e.clientX, y: e.clientY };
+      const node = findNode(pos);
+      if (node) {
+        isDragging = true;
+        this.draggedNode = node;
+        node.fx = node.x; node.fy = node.y;
+        this.simulation.alphaTarget(0.1).restart();
+      } else {
+        isPanning = true;
+        panStart = { x: e.clientX - this.transform.x, y: e.clientY - this.transform.y };
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (isDragging && this.draggedNode) {
+        const pos = getMousePos(e);
+        this.draggedNode.fx = pos.x; this.draggedNode.fy = pos.y;
+      } else if (isPanning && panStart) {
+        this.transform.x = e.clientX - panStart.x;
+        this.transform.y = e.clientY - panStart.y;
+        this.draw();
+      } else {
+        const pos = getMousePos(e);
+        const node = findNode(pos);
+        if (node !== this.hoveredNode) {
+          this.hoveredNode = node;
+          this.draw();
+          if (node) {
+            const trajText = node.traj.map(t => `${romanNums[t.c]}: ${t.p}`).join('<br>');
+            showTooltip(`<b>${node.n}</b><br>${node.cc} скликань<br><span style="font-size:0.7rem">${trajText}</span>`, e);
+          } else {
+            hideTooltip();
+          }
+        }
+      }
+    });
+
+    const endDrag = () => {
+      if (isDragging && this.draggedNode) {
+        this.draggedNode.fx = null; this.draggedNode.fy = null;
+        this.simulation.alphaTarget(0);
+        this.draggedNode = null;
+      }
+      isDragging = false; isPanning = false; panStart = null;
+    };
+
+    canvas.addEventListener('mouseup', (e) => {
+      if (dragStartPos) {
+        const dx = e.clientX - dragStartPos.x, dy = e.clientY - dragStartPos.y;
+        if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
+          const pos = getMousePos(e);
+          const node = findNode(pos);
+          if (node) {
+            if (this.selectedNodes.has(node.id)) this.selectedNodes.delete(node.id);
+            else this.selectedNodes.add(node.id);
+            this.draw();
+          } else if (this.selectedNodes.size) {
+            this.selectedNodes.clear(); this.draw();
+          }
+        }
+      }
+      endDrag();
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      endDrag(); this.hoveredNode = null; hideTooltip(); this.draw();
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const zoom = e.deltaY < 0 ? 1.1 : 0.9;
+      const newK = Math.max(0.2, Math.min(5, this.transform.k * zoom));
+      const ratio = newK / this.transform.k;
+      this.transform.x = mx - (mx - this.transform.x) * ratio;
+      this.transform.y = my - (my - this.transform.y) * ratio;
+      this.transform.k = newK;
+      this.draw();
+    }, { passive: false });
+
+    canvas.addEventListener('dblclick', (e) => {
+      const pos = getMousePos(e);
+      const node = findNode(pos);
+      if (node) showProfile(node.id);
+    });
+  }
+};
+
+// ============================================================
 const StatsView = {
   initialized: false,
 
@@ -2801,6 +3212,7 @@ async function init() {
   views.network = NetworkView;
   views.migration = MigrationView;
   views.profile = CatalogView;
+  views.trajectory = TrajectoryView;
   views.stats = StatsView;
 
   // Inject party legends on all views
