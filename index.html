@@ -295,9 +295,10 @@ input[type="range"]::-webkit-slider-thumb {
   font-weight: 400;
 }
 .sankey-node.isolated-node text {
-  font-size: 9px;
-  fill: var(--text3);
+  font-size: 10px;
+  fill: var(--text2);
 }
+.sankey-node.isolated-node rect { cursor: pointer; }
 .sankey-link {
   fill: none;
   stroke-opacity: 0.25;
@@ -1747,9 +1748,10 @@ const SankeyView = {
           .attr('stroke-width', 1.5)
           .attr('stroke-dasharray', '4,2')
           .on('mousemove', (event) => {
-            showTooltip(`<span class="tt-party" style="background:${getPartyColor(iso.name)}"></span> <b>${iso.name}</b><br>${romanNums[iso.conv] || iso.conv} скликання<br>${iso.mps} депутатів<br><i style="opacity:0.7">Немає міграцій — нові депутати</i>`, event);
+            showTooltip(`<span class="tt-party" style="background:${getPartyColor(iso.name)}"></span> <b>${iso.name}</b><br>${romanNums[iso.conv] || iso.conv} скликання<br>${iso.mps} депутатів<br><i style="opacity:0.7">Натисніть для списку депутатів</i>`, event);
           })
-          .on('mouseleave', hideTooltip);
+          .on('mouseleave', hideTooltip)
+          .on('click', () => { hideTooltip(); showIsolatedPartyModal(iso.name, iso.conv, mode); });
         // Multi-line label for isolated nodes — smaller font
         const labelX = isLeft ? x - 6 : x + nodeWidth + 6;
         const anchor = isLeft ? 'end' : 'start';
@@ -1764,12 +1766,12 @@ const SankeyView = {
           .attr('x', labelX)
           .attr('y', yTop + isoH / 2 - (lines.length - 1) * 5)
           .attr('text-anchor', anchor)
-          .style('font-size', '9px')
-          .style('fill', 'var(--text3)');
+          .style('cursor', 'pointer');
         lines.forEach((ln, li) => {
           lbl.append('tspan').attr('x', labelX).attr('dy', li === 0 ? '0.35em' : '1.1em').text(ln);
         });
         lbl.append('title').text(`${iso.name} (${iso.mps} МП, без міграцій)`);
+        lbl.style('cursor', 'pointer').on('click', () => showIsolatedPartyModal(iso.name, iso.conv, mode));
       });
       // Resize SVG to fit all isolated nodes
       const maxBottom = Math.max(...Object.values(convBottoms)) + 30;
@@ -3974,6 +3976,34 @@ function showMigrationModal(d) {
   if (mpIds.length === 0) {
     html += '<p style="color:var(--text3)">Список депутатів недоступний</p>';
   }
+  openModal(title, html);
+}
+
+function showIsolatedPartyModal(partyName, conv, mode) {
+  const title = `${partyName} — ${romanNums[conv] || conv} скликання`;
+  const useFaction = mode === 'faction';
+  // Find MPs in this party/faction + convocation
+  const mpIds = [];
+  for (const [id, p] of Object.entries(DATA.mpProfiles)) {
+    if (useFaction) {
+      const frMap = getMpFactions(p);
+      if (frMap[conv] === partyName) mpIds.push(id);
+    } else {
+      const entry = p.c.find(e => e[0] === conv);
+      if (entry && entry[1] === partyName) mpIds.push(id);
+    }
+  }
+  let html = `<p style="font-size:0.85rem;color:var(--text2);margin-bottom:1rem">${mpIds.length} депутатів у цій ${useFaction ? 'фракції' : 'партії'} (без міграцій з інших скликань)</p>`;
+  mpIds.sort((a, b) => (DATA.mpProfiles[a]?.n || '').localeCompare(DATA.mpProfiles[b]?.n || '', 'uk'));
+  mpIds.forEach(id => {
+    const p = DATA.mpProfiles[id];
+    if (!p) return;
+    let linkHtml = '';
+    if (p.w) linkHtml += `<a href="${p.w}" target="_blank">Вікі</a> `;
+    linkHtml += `<a href="#" onclick="event.preventDefault();closeModal();showProfile('${id}')">Профіль</a>`;
+    html += `<div class="mp-list-item"><span>${p.n}</span><span>${linkHtml}</span></div>`;
+  });
+  if (mpIds.length === 0) html += '<p style="color:var(--text3)">Список депутатів недоступний</p>';
   openModal(title, html);
 }
 
