@@ -283,6 +283,8 @@ input[type="range"]::-webkit-slider-thumb {
 /* === SANKEY (View 1) === */
 .sankey-container { position: relative; overflow: auto; }
 .sankey-container svg { min-height: 600px; }
+.sankey-zoom-ctrl { display:flex; align-items:center; gap:6px; margin:4px 0 0; font-size:0.75rem; color:var(--text3); }
+.sankey-zoom-ctrl input { width:100px; }
 .sankey-node rect {
   cursor: pointer;
   transition: opacity 0.3s;
@@ -291,6 +293,10 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 11px;
   fill: var(--text2);
   font-weight: 400;
+}
+.sankey-node.isolated-node text {
+  font-size: 9px;
+  fill: var(--text3);
 }
 .sankey-link {
   fill: none;
@@ -1458,6 +1464,7 @@ const SankeyView = {
     html += '<input type="range" id="sankeyMinFlow" min="1" max="20" value="3">';
     html += '<span id="sankeyMinVal">3</span></div>';
     html += '<div class="control-group"><label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;color:var(--text2)"><input type="checkbox" id="sankeyShowIsolated"> Показати без міграцій</label></div>';
+    html += '<div class="sankey-zoom-ctrl"><span>Масштаб:</span><input type="range" id="sankeyZoom" min="100" max="300" value="100"><span id="sankeyZoomVal">100%</span></div>';
     ctrl.innerHTML = html;
 
     const updateRange = () => {
@@ -1490,6 +1497,18 @@ const SankeyView = {
     document.getElementById('sankeyShowIsolated').addEventListener('change', e => {
       this.showIsolated = e.target.checked;
       this.render();
+    });
+    document.getElementById('sankeyZoom').addEventListener('input', e => {
+      const z = e.target.value;
+      document.getElementById('sankeyZoomVal').textContent = z + '%';
+      const container = document.getElementById('sankeyChart');
+      const svgEl = container.querySelector('svg');
+      if (svgEl) {
+        const origW = svgEl.dataset.origW || svgEl.getAttribute('width');
+        if (!svgEl.dataset.origW) svgEl.dataset.origW = origW;
+        svgEl.style.width = (parseFloat(origW) * z / 100) + 'px';
+        svgEl.style.minWidth = (parseFloat(origW) * z / 100) + 'px';
+      }
     });
   },
 
@@ -1673,16 +1692,27 @@ const SankeyView = {
           })
           .on('mouseleave', hideTooltip);
 
-        // Label
+        // Label — wrap long names into 2 lines
         const isLeft = d.x0 < width / 2;
         if (d.y1 - d.y0 > 14) {
-          g.append('text')
-            .attr('x', isLeft ? d.x0 - 6 : d.x1 + 6)
-            .attr('y', (d.y0 + d.y1) / 2)
-            .attr('dy', '0.35em')
-            .attr('text-anchor', isLeft ? 'end' : 'start')
-            .text(shortenParty(d.name, 25))
-            .append('title').text(d.name);
+          const lx = isLeft ? d.x0 - 6 : d.x1 + 6;
+          const anch = isLeft ? 'end' : 'start';
+          const fullName = shortenParty(d.name, 28);
+          const maxLineLen = 18;
+          let lblLines;
+          if (fullName.length > maxLineLen) {
+            const mid = fullName.lastIndexOf(' ', maxLineLen);
+            if (mid > 6) lblLines = [fullName.slice(0, mid), fullName.slice(mid + 1)];
+            else lblLines = [fullName];
+          } else lblLines = [fullName];
+          const txt = g.append('text')
+            .attr('x', lx)
+            .attr('y', (d.y0 + d.y1) / 2 - (lblLines.length - 1) * 5.5)
+            .attr('text-anchor', anch);
+          lblLines.forEach((ln, li) => {
+            txt.append('tspan').attr('x', lx).attr('dy', li === 0 ? '0.35em' : '1.15em').text(ln);
+          });
+          txt.append('title').text(d.name);
         }
       });
 
@@ -1724,21 +1754,42 @@ const SankeyView = {
             showTooltip(`<span class="tt-party" style="background:${getPartyColor(iso.name)}"></span> <b>${iso.name}</b><br>${romanNums[iso.conv] || iso.conv} скликання<br>${iso.mps} депутатів<br><i style="opacity:0.7">Немає міграцій — нові депутати</i>`, event);
           })
           .on('mouseleave', hideTooltip);
-        g.append('text')
-          .attr('x', isLeft ? x - 6 : x + nodeWidth + 6)
-          .attr('y', yTop + isoH / 2)
-          .attr('dy', '0.35em')
-          .attr('text-anchor', isLeft ? 'end' : 'start')
-          .style('font-size', '0.75rem')
-          .style('fill', 'var(--text2)')
-          .style('font-style', 'italic')
-          .text(shortenParty(iso.name, 22))
-          .append('title').text(`${iso.name} (${iso.mps} МП, без міграцій)`);
+        // Multi-line label for isolated nodes — smaller font
+        const labelX = isLeft ? x - 6 : x + nodeWidth + 6;
+        const anchor = isLeft ? 'end' : 'start';
+        const words = iso.name.split(/[\s/]+/);
+        const lines = []; let cur = '';
+        words.forEach(w => {
+          if ((cur + ' ' + w).trim().length > 16 && cur) { lines.push(cur.trim()); cur = w; }
+          else cur = cur ? cur + ' ' + w : w;
+        });
+        if (cur) lines.push(cur.trim());
+        const lbl = g.append('text')
+          .attr('x', labelX)
+          .attr('y', yTop + isoH / 2 - (lines.length - 1) * 5)
+          .attr('text-anchor', anchor)
+          .style('font-size', '9px')
+          .style('fill', 'var(--text3)');
+        lines.forEach((ln, li) => {
+          lbl.append('tspan').attr('x', labelX).attr('dy', li === 0 ? '0.35em' : '1.1em').text(ln);
+        });
+        lbl.append('title').text(`${iso.name} (${iso.mps} МП, без міграцій)`);
       });
       // Resize SVG to fit all isolated nodes
       const maxBottom = Math.max(...Object.values(convBottoms)) + 30;
       if (maxBottom > height) {
         d3.select(container).select('svg').attr('height', maxBottom + margin.top + margin.bottom);
+      }
+    }
+    // Store original width for zoom and apply current zoom
+    const svgEl = container.querySelector('svg');
+    if (svgEl) {
+      svgEl.dataset.origW = svgEl.getAttribute('width');
+      const zoom = document.getElementById('sankeyZoom');
+      if (zoom && zoom.value !== '100') {
+        const z = zoom.value;
+        svgEl.style.width = (parseFloat(svgEl.dataset.origW) * z / 100) + 'px';
+        svgEl.style.minWidth = svgEl.style.width;
       }
     }
   }
