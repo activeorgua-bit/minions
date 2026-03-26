@@ -1030,6 +1030,7 @@ input[type="range"]::-webkit-slider-thumb {
     <div class="controls" id="profileControls">
       <input type="text" class="search-input" id="profileSearch" placeholder="Пошук за прізвищем...">
       <div style="width:100%"><span class="control-label">Партії:</span><div id="catPartyPills"></div></div>
+      <div style="width:100%"><span class="control-label">Фракції:</span><div id="catFactionPills"></div></div>
       <div><span class="control-label">Скликання:</span><div id="catConvPills"></div></div>
     </div>
     <div class="card" style="padding:0">
@@ -1048,6 +1049,10 @@ input[type="range"]::-webkit-slider-thumb {
     <h2 class="view-title">Мережа партійних траєкторій</h2>
     <p class="view-desc">Кластери депутатів зі схожими партійними шляхами. Чим ближче вузли — тим схожіші траєкторії.</p>
     <div class="controls" id="trajControls">
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <span class="control-label">Режим:</span>
+        <select id="trajMode"><option value="party">Партії</option><option value="faction">Фракції</option></select>
+      </div>
       <div style="display:flex;align-items:center;gap:0.5rem">
         <span class="control-label">Мін. схожість:</span>
         <input type="range" id="trajMinSim" min="50" max="100" value="100" style="width:120px">
@@ -1219,6 +1224,24 @@ function getPartyMultiOptions() {
 
 function getConvMultiOptions() {
   return DATA.meta.convocations.map(c => ({ value: String(c), label: `${romanNums[c]} (${c})` }));
+}
+
+function getFactionMultiOptions() {
+  if (!DATA.factionStats) return [];
+  return Object.entries(DATA.factionStats)
+    .map(([f, s]) => ({ value: f, label: shortenParty(f, 22), color: getPartyColor(f), mps: Object.values(s).reduce((a,v) => a + v.mps, 0) }))
+    .sort((a, b) => b.mps - a.mps);
+}
+
+// Get MP's last faction per convocation (for filtering)
+function getMpFactions(profile) {
+  const fr = profile.fr;
+  if (!fr) return {};
+  const result = {};
+  for (const [c, recs] of Object.entries(fr)) {
+    if (recs.length) result[c] = recs[recs.length - 1].f;
+  }
+  return result;
 }
 
 function buildPartyLegend() {
@@ -1675,6 +1698,9 @@ const SankeyView = {
 const ChordView = {
   initialized: false,
   selectedTransition: 'all',
+  mode: 'party',
+  convFrom: 1,
+  convTo: 9,
 
   init() {
     this.buildControls();
@@ -1684,18 +1710,39 @@ const ChordView = {
 
   buildControls() {
     const ctrl = document.getElementById('chordControls');
-    const transitions = DATA.mpMigrations.transitions;
-    let html = '<div class="control-group"><span class="control-label">Перехід:</span>';
-    html += '<select id="chordTransition"><option value="all">Усі переходи (сума)</option>';
-    transitions.forEach(t => {
-      const [a, b] = t.split('→');
-      html += `<option value="${t}">${a} → ${b} скликання</option>`;
-    });
-    html += '</select></div>';
+    const allConvs = DATA.meta.convocations;
+    const minC = allConvs[0], maxC = allConvs[allConvs.length - 1];
+    this.convFrom = minC;
+    this.convTo = maxC;
+
+    let html = '<div class="control-group"><span class="control-label">Режим:</span>';
+    html += '<select id="chordMode"><option value="party">Партії</option><option value="faction">Фракції</option></select></div>';
+    html += '<div class="control-group"><span class="control-label">Скликання:</span>';
+    html += `<input type="range" id="chordConvFrom" min="${minC}" max="${maxC}" value="${minC}" style="width:70px">`;
+    html += `<span id="chordRangeLabel" style="font-weight:600;min-width:55px;text-align:center">${romanNums[minC]}–${romanNums[maxC]}</span>`;
+    html += `<input type="range" id="chordConvTo" min="${minC}" max="${maxC}" value="${maxC}" style="width:70px">`;
+    html += '</div>';
     ctrl.innerHTML = html;
 
-    document.getElementById('chordTransition').addEventListener('change', e => {
-      this.selectedTransition = e.target.value;
+    const updateRange = () => {
+      let from = parseInt(document.getElementById('chordConvFrom').value);
+      let to = parseInt(document.getElementById('chordConvTo').value);
+      if (from > to) { [from, to] = [to, from]; }
+      if (from === to && to < maxC) to++;
+      else if (from === to) from--;
+      this.convFrom = from; this.convTo = to;
+      document.getElementById('chordRangeLabel').textContent = `${romanNums[from]}–${romanNums[to]}`;
+      this.render();
+    };
+    document.getElementById('chordConvFrom').addEventListener('input', updateRange);
+    document.getElementById('chordConvTo').addEventListener('input', updateRange);
+    document.getElementById('chordMode').addEventListener('change', e => {
+      this.mode = e.target.value;
+      if (this.mode === 'faction' && this.convFrom < 3) {
+        this.convFrom = 3;
+        document.getElementById('chordConvFrom').value = 3;
+        document.getElementById('chordRangeLabel').textContent = `${romanNums[3]}–${romanNums[this.convTo]}`;
+      }
       this.render();
     });
   },
@@ -1706,11 +1753,13 @@ const ChordView = {
     chartEl.innerHTML = '';
     barsEl.innerHTML = '<h3 style="font-size:0.95rem;font-weight:450;margin-bottom:1rem">Баланс міграції</h3>';
 
-    const selTrans = this.selectedTransition;
-    let flows = DATA.mpMigrations.flows;
-    if (selTrans !== 'all') {
-      flows = flows.filter(f => f.transition === selTrans);
-    }
+    const migData = this.mode === 'faction' ? (DATA.factionMigrations || DATA.mpMigrations) : DATA.mpMigrations;
+    const { convFrom, convTo } = this;
+    const validTrans = migData.transitions.filter(t => {
+      const [a, b] = t.split('→').map(Number);
+      return a >= convFrom && b <= convTo;
+    });
+    let flows = migData.flows.filter(f => validTrans.includes(f.transition));
 
     // Build party matrix
     const parties = [...new Set(flows.flatMap(f => [f.from, f.to]))].sort();
@@ -1847,6 +1896,7 @@ const NetworkView = {
   searchTerm: '',
   searchAssistant: '',
   minShared: 3,
+  filterFactions: [],
 
   init() {
     this.canvas = document.getElementById('networkCanvas');
@@ -1872,6 +1922,7 @@ const NetworkView = {
         <span id="networkMinVal">3</span>
       </div>
       <div style="width:100%"><span class="control-label">Партії:</span> <span style="font-size:0.7rem;color:var(--text3)">(клікніть для вибору)</span><div id="netPartyPills"></div></div>
+      <div style="width:100%"><span class="control-label">Фракції:</span><div id="netFactionPills"></div></div>
       <div><span class="control-label">Скликання:</span><div id="netConvPills"></div></div>
     `;
 
@@ -1901,6 +1952,10 @@ const NetworkView = {
       this.filterParties = vals;
       this.loadData();
     });
+    createMultiSelect('netFactionPills', getFactionMultiOptions(), vals => {
+      this.filterFactions = vals;
+      this.loadData();
+    });
     createMultiSelect('netConvPills', getConvMultiOptions(), vals => {
       this.filterConvs = vals.map(Number);
       this.loadData();
@@ -1922,6 +1977,7 @@ const NetworkView = {
     const min = this.minShared;
     const fp = this.filterParties || [];
     const fc = this.filterConvs || [];
+    const ff = this.filterFactions || [];
 
     // Filter to assistants with sharedCount >= min
     const validAssistants = new Set();
@@ -1949,6 +2005,10 @@ const NetworkView = {
       } else if (n.t === 'm' && validMps.has(n.id)) {
         if (fp.length && !fp.includes(n.p)) return; // party filter (multi)
         if (fc.length && n.c && !n.c.some(c => fc.includes(c))) return; // conv filter (multi)
+        if (ff.length) { // faction filter
+          const mpFr = DATA.mpProfiles[n.id] && getMpFactions(DATA.mpProfiles[n.id]);
+          if (!mpFr || !Object.values(mpFr).some(f => ff.includes(f))) return;
+        }
         nodeMap.set(n.id, { ...n, x: undefined, y: undefined, vx: 0, vy: 0 });
       }
     });
@@ -2244,6 +2304,7 @@ const MigrationView = {
   initialized: false,
   filter: null,
   filterParties: [],
+  filterFactions: [],
   filterConvs: [],
   filterTypes: [],
   searchMp: '',
@@ -2262,6 +2323,7 @@ const MigrationView = {
       <input type="text" class="search-input" id="migMpSearch" placeholder="Пошук за прізвищем депутата...">
       <input type="text" class="search-input" id="migAstSearch" placeholder="Пошук за прізвищем помічника...">
       <div style="width:100%"><span class="control-label">Партії:</span><div id="migPartyPills"></div></div>
+      <div style="width:100%"><span class="control-label">Фракції:</span><div id="migFactionPills"></div></div>
       <div><span class="control-label">Скликання:</span><div id="migConvPills"></div></div>
       <div><span class="control-label">Тип:</span><div id="migTypePills"></div></div>
     `;
@@ -2276,6 +2338,10 @@ const MigrationView = {
     });
     createMultiSelect('migPartyPills', getPartyMultiOptions(), vals => {
       this.filterParties = vals;
+      this.renderList();
+    });
+    createMultiSelect('migFactionPills', getFactionMultiOptions(), vals => {
+      this.filterFactions = vals;
       this.renderList();
     });
     createMultiSelect('migConvPills', getConvMultiOptions(), vals => {
@@ -2431,6 +2497,7 @@ const CatalogView = {
   initialized: false,
   allMps: [],
   filterParties: [],
+  filterFactions: [],
   filterConvs: [],
   searchTerm: '',
 
@@ -2455,6 +2522,10 @@ const CatalogView = {
       this.filterParties = vals;
       this.renderTable();
     });
+    createMultiSelect('catFactionPills', getFactionMultiOptions(), vals => {
+      this.filterFactions = vals;
+      this.renderTable();
+    });
     createMultiSelect('catConvPills', getConvMultiOptions(), vals => {
       this.filterConvs = vals.map(Number);
       this.renderTable();
@@ -2474,6 +2545,12 @@ const CatalogView = {
     }
     if (this.filterParties.length) {
       mps = mps.filter(m => m.c.some(e => this.filterParties.includes(e[1])));
+    }
+    if (this.filterFactions.length) {
+      mps = mps.filter(m => {
+        const fr = getMpFactions(m);
+        return Object.values(fr).some(f => this.filterFactions.includes(f));
+      });
     }
     if (this.filterConvs.length) {
       mps = mps.filter(m => m.c.some(e => this.filterConvs.includes(e[0])));
@@ -2712,6 +2789,7 @@ const TrajectoryView = {
   minSim: 100,
   minConvs: 3,
   filterParties: [],
+  mode: 'party',
   w: 0,
   h: 0,
 
@@ -2747,6 +2825,11 @@ const TrajectoryView = {
       this.loadData();
     });
 
+    document.getElementById('trajMode').addEventListener('change', e => {
+      this.mode = e.target.value;
+      this.loadData();
+    });
+
     this.loadData();
     this.setupInteractions();
     this.initialized = true;
@@ -2756,33 +2839,65 @@ const TrajectoryView = {
     this.selectedNodes.clear();
     const profiles = DATA.mpProfiles;
     const fp = this.filterParties;
+    const useFaction = this.mode === 'faction';
 
     // Build nodes: MPs with enough convocations
     const nodeMap = new Map();
     for (const [id, p] of Object.entries(profiles)) {
       if (p.c.length < this.minConvs) continue;
       if (!p.s || p.s.length === 0) continue;
-      const lastParty = p.c[p.c.length - 1][1];
-      if (fp.length && !p.c.some(e => fp.includes(e[1]))) continue;
+
+      let traj, lastLabel;
+      if (useFaction && p.fr) {
+        const frMap = getMpFactions(p);
+        const fConvs = Object.keys(frMap).map(Number).sort();
+        if (fConvs.length < this.minConvs) continue;
+        traj = fConvs.map(c => ({ c, p: frMap[c] }));
+        lastLabel = frMap[fConvs[fConvs.length - 1]];
+      } else {
+        traj = p.c.map(e => ({ c: e[0], p: e[1] }));
+        lastLabel = p.c[p.c.length - 1][1];
+      }
+
+      if (fp.length && !traj.some(t => fp.includes(t.p))) continue;
       nodeMap.set(id, {
-        id, n: p.n, p: lastParty, cc: p.c.length,
-        traj: p.c.map(e => ({ c: e[0], p: e[1] })),
-        x: undefined, y: undefined, vx: 0, vy: 0
+        id, n: p.n, p: lastLabel, cc: p.c.length,
+        traj, x: undefined, y: undefined, vx: 0, vy: 0
       });
     }
 
     // Build links from profile similarity data
+    // For faction mode, recompute similarity on-the-fly
     const links = [];
     const seen = new Set();
-    for (const [id, p] of Object.entries(profiles)) {
-      if (!nodeMap.has(id) || !p.s) continue;
-      for (const [score, otherId] of p.s) {
-        if (score < this.minSim) continue;
-        if (!nodeMap.has(otherId)) continue;
-        const pairKey = id < otherId ? `${id}-${otherId}` : `${otherId}-${id}`;
-        if (seen.has(pairKey)) continue;
-        seen.add(pairKey);
-        links.push({ source: id, target: otherId, score });
+    if (useFaction) {
+      // Compare faction trajectories
+      const nodeArr = Array.from(nodeMap.values());
+      for (let i = 0; i < nodeArr.length; i++) {
+        for (let j = i + 1; j < Math.min(nodeArr.length, i + 200); j++) {
+          const a = nodeArr[i], b = nodeArr[j];
+          const aMap = Object.fromEntries(a.traj.map(t => [t.c, t.p]));
+          const bMap = Object.fromEntries(b.traj.map(t => [t.c, t.p]));
+          const shared = Object.keys(aMap).filter(c => c in bMap);
+          if (shared.length < 2) continue;
+          const matches = shared.filter(c => aMap[c] === bMap[c]).length;
+          const score = Math.round(matches / shared.length * 100);
+          if (score >= this.minSim) {
+            links.push({ source: a.id, target: b.id, score });
+          }
+        }
+      }
+    } else {
+      for (const [id, p] of Object.entries(profiles)) {
+        if (!nodeMap.has(id) || !p.s) continue;
+        for (const [score, otherId] of p.s) {
+          if (score < this.minSim) continue;
+          if (!nodeMap.has(otherId)) continue;
+          const pairKey = id < otherId ? `${id}-${otherId}` : `${otherId}-${id}`;
+          if (seen.has(pairKey)) continue;
+          seen.add(pairKey);
+          links.push({ source: id, target: otherId, score });
+        }
       }
     }
 
@@ -3388,6 +3503,59 @@ const StatsView = {
       <div><div class="stat-big-number">${formatNum(m.totalAssistants)}</div><div class="stat-sub">помічників загалом</div></div>
       <div><div class="stat-big-number">${formatNum(migSum.followedMp)}</div><div class="stat-sub">помічників, що слідували за своїм МП у 2+ скликаннях</div></div>
     </div></div>`;
+
+    // Card: Faction changers
+    html += '<div class="card stat-card"><div class="stat-card-title">Зміна фракцій (всередині скликань)</div>';
+    html += '<p style="font-size:0.78rem;color:var(--text3);margin-bottom:0.5rem">Депутати, які найчастіше змінювали фракцію протягом одного скликання</p>';
+    // Compute intra-convocation faction changes per MP
+    const factionChangers = [];
+    for (const [pid, p] of Object.entries(DATA.mpProfiles)) {
+      if (!p.fr) continue;
+      let totalChanges = 0;
+      for (const [c, recs] of Object.entries(p.fr)) {
+        for (let i = 1; i < recs.length; i++) {
+          if (recs[i].f !== recs[i-1].f) totalChanges++;
+        }
+      }
+      if (totalChanges > 0) factionChangers.push({ id: pid, n: p.n, ch: totalChanges, cc: p.c.length });
+    }
+    factionChangers.sort((a, b) => -a.ch + b.ch);
+    html += '<div class="stat-list">';
+    factionChangers.slice(0, 10).forEach(m => {
+      html += `<div class="stat-list-item" onclick="showProfile('${m.id}')">
+        <span style="flex:1">${m.n}</span>
+        <span style="font-weight:600">${m.ch} змін</span>
+        <span style="color:var(--text3);font-size:0.72rem">${m.cc} скл.</span>
+      </div>`;
+    });
+    html += '</div>';
+
+    // Conformists: MPs who NEVER changed faction in any convocation
+    const conformists = [];
+    for (const [pid, p] of Object.entries(DATA.mpProfiles)) {
+      if (!p.fr || p.c.length < 2) continue;
+      const frConvs = Object.keys(p.fr);
+      if (frConvs.length < 2) continue;
+      let changed = false;
+      for (const [c, recs] of Object.entries(p.fr)) {
+        for (let i = 1; i < recs.length; i++) {
+          if (recs[i].f !== recs[i-1].f && recs[i].f !== 'Позафракційні' && recs[i-1].f !== 'Позафракційні') { changed = true; break; }
+        }
+        if (changed) break;
+      }
+      if (!changed) conformists.push({ id: pid, n: p.n, cc: p.c.length, fc: frConvs.length });
+    }
+    conformists.sort((a, b) => -a.cc + b.cc);
+    html += '<div class="stat-card-title" style="margin-top:1.5rem">Конформісти — ніколи не змінювали фракцію</div>';
+    html += '<p style="font-size:0.78rem;color:var(--text3);margin-bottom:0.5rem">Депутати у 2+ скликаннях, що жодного разу не переходили між фракціями</p>';
+    html += '<div class="stat-list">';
+    conformists.slice(0, 10).forEach(m => {
+      html += `<div class="stat-list-item" onclick="showProfile('${m.id}')">
+        <span style="flex:1">${m.n}</span>
+        <span style="font-weight:600">${m.cc} скл.</span>
+      </div>`;
+    });
+    html += `</div><p style="font-size:0.75rem;color:var(--text3);margin-top:0.5rem">Всього: ${conformists.length} конформістів</p></div>`;
 
     grid.innerHTML = html;
     // Initialize assistant ranking with default
