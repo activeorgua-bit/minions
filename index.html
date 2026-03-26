@@ -898,7 +898,7 @@ input[type="range"]::-webkit-slider-thumb {
     <nav class="tabs" id="tabs">
       <div class="tab-pill" id="tabPill"></div>
       <div class="tab active" data-view="sankey">Міграція</div>
-      <div class="tab" data-view="chord">Баланс партій</div>
+      <!-- <div class="tab" data-view="chord">Баланс партій</div> -->
       <div class="tab" data-view="network">Мережа помічників</div>
       <div class="tab" data-view="migration">Аналіз помічників</div>
       <div class="tab" data-view="profile">Каталог депутатів</div>
@@ -2473,12 +2473,12 @@ const MigrationView = {
       let trailHtml = d.t.map(step => {
         const mpName = DATA.mpNames[step[1]] || step[1];
         const shortMp = mpName.split(' ').slice(0, 2).join(' ');
-        return `<span class="trail-step"><span class="tt-party" style="background:${getPartyColor(step[2])};display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:2px"></span>${step[0]}: ${shortMp}</span>`;
+        return `<span class="trail-step"><span class="tt-party" style="background:${getPartyColor(step[2])};display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:2px"></span>${step[0]}: <a href="#" onclick="event.preventDefault();showProfile('${step[1]}')" style="color:var(--text1);text-decoration:none;border-bottom:1px dotted var(--text3)">${shortMp}</a></span>`;
       }).join('<span class="trail-arrow">→</span>');
 
       div.innerHTML = `
         <div style="display:flex;align-items:center;gap:0.5rem">
-          <span class="migration-item-name">${d.n}</span>
+          <a href="#" class="migration-item-name" onclick="event.preventDefault();showAssistantCard('${d.i || ''}')" style="color:var(--text1);text-decoration:none;cursor:pointer">${d.n}</a>
           <span class="pattern-badge ${patternClass[d.p]}">${patternLabels[d.p]}</span>
           <span style="font-size:0.65rem;color:var(--text3)">${d.a === 1 ? '●\u2009платн.' : '○\u2009волонт.'}</span>
         </div>
@@ -2632,6 +2632,90 @@ function toggleCatAst(mpId, conv, badge) {
   setTimeout(() => document.addEventListener('click', closeHandler), 0);
 }
 
+function showAssistantCard(astId, astName) {
+  // Find assistant in migration details or profile data
+  const details = DATA.assistantMigration?.details || [];
+  let ast = null;
+  if (astId) {
+    ast = details.find(d => d.i === astId);
+  }
+  if (!ast && astName) {
+    ast = details.find(d => d.n === astName);
+  }
+
+  // If not in migration data, search in all profile assistants
+  if (!ast && astName) {
+    const timeline = [];
+    for (const [pid, p] of Object.entries(DATA.mpProfiles)) {
+      if (!p.a) continue;
+      for (const [c, alist] of Object.entries(p.a)) {
+        for (const a of alist) {
+          if (a[0] === astName) {
+            timeline.push([parseInt(c), pid, p.c.find(e => e[0] === parseInt(c))?.[1] || '?', a[1]]);
+          }
+        }
+      }
+    }
+    if (timeline.length) {
+      timeline.sort((a, b) => a[0] - b[0]);
+      ast = { n: astName, t: timeline, p: '?', a: timeline[0][3] };
+    }
+  }
+
+  if (!ast) {
+    openModal('Помічник', `<p>Інформацію про помічника «${astName || astId}» не знайдено в базі міграцій.</p>`);
+    return;
+  }
+
+  const patternLabels = { f: 'Слідом за депутатом', s: 'З партією', i: 'Незалежний', '?': '—' };
+  const patternColors = { f: '#6ba88e', s: '#5b8a9a', i: '#d4a574', '?': '#999' };
+  const typeLabel = ast.a === 1 ? '● Платний' : '○ На громадських засадах';
+
+  let html = `<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem">
+    <div style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#d4a574,#c49464);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:1.1rem">${ast.n.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+    <div>
+      <div style="font-size:1.1rem;font-weight:600">${ast.n}</div>
+      <div style="font-size:0.8rem;color:var(--text3)">${typeLabel}</div>
+    </div>
+  </div>`;
+
+  if (ast.p !== '?') {
+    html += `<div style="margin-bottom:1rem"><span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;background:${patternColors[ast.p]};color:#fff">${patternLabels[ast.p]}</span></div>`;
+  }
+
+  html += '<div style="font-size:0.85rem;font-weight:500;margin-bottom:0.5rem">Історія роботи</div>';
+  html += '<div style="border-left:3px solid #d4a574;padding-left:12px">';
+  ast.t.forEach(step => {
+    const mpName = DATA.mpNames?.[step[1]] || DATA.mpProfiles[step[1]]?.n || step[1];
+    const shortMp = mpName.split(' ').slice(0, 2).join(' ');
+    const years = DATA.convYears[step[0]] || '';
+    const paid = step[3] === 1 ? '● платн.' : '○ волонт.';
+    html += `<div style="padding:6px 0;border-bottom:1px solid #f0ece8">
+      <div style="font-size:0.75rem;color:var(--text3)">${romanNums[step[0]]} скликання ${years ? `(${years})` : ''} <span style="font-size:0.65rem">${paid}</span></div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${getPartyColor(step[2])}"></span>
+        <a href="#" onclick="event.preventDefault();closeModal();showProfile('${step[1]}')" style="color:var(--text1);text-decoration:none;font-weight:500;border-bottom:1px dotted var(--text3)">${shortMp}</a>
+        <span style="font-size:0.72rem;color:var(--text3)" title="${step[2]}">${shortenParty(step[2], 25)}</span>
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Find other assistants who worked with same MPs
+  const mpIds = new Set(ast.t.map(s => s[1]));
+  const related = details.filter(d => d.i !== ast.i && d.t.some(s => mpIds.has(s[1]))).slice(0, 10);
+  if (related.length) {
+    html += '<div style="font-size:0.85rem;font-weight:500;margin-top:1.2rem;margin-bottom:0.5rem">Колеги (спільні депутати)</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+    related.forEach(r => {
+      html += `<span class="chip" onclick="closeModal();showAssistantCard('${r.i}')" style="cursor:pointer">${r.n.split(' ').slice(0,2).join(' ')}</span>`;
+    });
+    html += '</div>';
+  }
+
+  openModal(`Помічник: ${ast.n}`, html);
+}
+
 function showProfile(mpId) {
   // Switch to profile tab
   const profileTab = document.querySelector('.tab[data-view="profile"]');
@@ -2688,7 +2772,8 @@ function showProfile(mpId) {
         const typeIcon = a[1] ? '●' : '○';
         const typeColor = a[1] ? 'var(--accent)' : 'var(--text3)';
         const typeLabel = a[1] ? 'платний' : 'на гром. засадах';
-        astHtml += `<div style="font-size:0.72rem;padding:1px 0;color:var(--text2)" title="${typeLabel}"><span style="color:${typeColor}">${typeIcon}</span> ${a[0]}</div>`;
+        const astNameEsc = a[0].replace(/'/g, "\\'");
+        astHtml += `<div style="font-size:0.72rem;padding:1px 0;color:var(--text2)" title="${typeLabel}"><span style="color:${typeColor}">${typeIcon}</span> <a href="#" onclick="event.preventDefault();showAssistantCard(null,'${astNameEsc}')" style="color:var(--text2);text-decoration:none;border-bottom:1px dotted var(--text3)">${a[0]}</a></div>`;
       });
       astHtml += '</div></div>';
     }
