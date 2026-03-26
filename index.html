@@ -1183,20 +1183,36 @@ function getPartyOptions() {
 
 // Multi-select pill component
 function createMultiSelect(containerId, options, onChange, opts = {}) {
-  // options: [{value, label, color?}]
-  // onChange(selectedValues: string[])
   const el = document.getElementById(containerId);
   if (!el) return;
   const maxShow = opts.maxShow || 50;
   const shown = options.slice(0, maxShow);
   let selected = new Set();
+  const collapsible = shown.length > 8;
+  let collapsed = collapsible;
 
   function render() {
-    el.innerHTML = '<div class="filter-pills">' + shown.map(o => {
+    const selCount = selected.size;
+    const selLabel = selCount ? ` (${selCount} обрано)` : '';
+
+    let html = '';
+    if (collapsible) {
+      const arrow = collapsed ? '&#9654;' : '&#9660;';
+      html += `<div class="pills-toggle" style="cursor:pointer;font-size:0.75rem;color:var(--accent);user-select:none;padding:2px 0;display:flex;align-items:center;gap:4px"><span class="pills-arrow">${arrow}</span><span>${shown.length} варіантів${selLabel}</span></div>`;
+    }
+    html += `<div class="filter-pills" style="${collapsible && collapsed ? 'display:none' : ''}">` + shown.map(o => {
       const active = selected.has(o.value) ? ' active' : '';
       const dot = o.color ? `<span class="pill-dot" style="background:${o.color}"></span>` : '';
       return `<span class="filter-pill${active}" data-val="${o.value}" title="${o.value}">${dot}${o.label}</span>`;
     }).join('') + '</div>';
+    el.innerHTML = html;
+
+    if (collapsible) {
+      el.querySelector('.pills-toggle').addEventListener('click', () => {
+        collapsed = !collapsed;
+        render();
+      });
+    }
 
     el.querySelectorAll('.filter-pill').forEach(pill => {
       pill.addEventListener('click', () => {
@@ -1204,6 +1220,9 @@ function createMultiSelect(containerId, options, onChange, opts = {}) {
         if (selected.has(val)) selected.delete(val);
         else selected.add(val);
         pill.classList.toggle('active');
+        // Update toggle label
+        const toggle = el.querySelector('.pills-toggle span:last-child');
+        if (toggle) toggle.textContent = `${shown.length} варіантів (${selected.size} обрано)`;
         onChange(Array.from(selected));
       });
     });
