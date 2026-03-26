@@ -281,8 +281,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* === SANKEY (View 1) === */
-.sankey-container { position: relative; overflow-y: auto; max-height: 90vh; }
-.sankey-container svg { width: 100%; min-height: 600px; }
+.sankey-container { position: relative; overflow: auto; }
+.sankey-container svg { min-height: 600px; }
 .sankey-node rect {
   cursor: pointer;
   transition: opacity 0.3s;
@@ -1562,20 +1562,19 @@ const SankeyView = {
       mpIds: l.mpIds,
     }));
 
-    // Dimensions — scale height with data density
+    // Dimensions — generous spacing for readability
     const width = container.clientWidth - 80;
-    const numConvs = new Set(nodes.map(n => n.conv)).size;
-    const maxNodesInCol = Math.max(...Array.from(
-      nodes.reduce((m, n) => m.set(n.conv, (m.get(n.conv) || 0) + 1), new Map()).values()
-    ));
-    // Give each node at least 22px (rect + padding) — minimum 600, grows with data
-    const baseHeight = Math.max(600, maxNodesInCol * 22, nodes.length * 10);
-    // Extra space for isolated nodes
-    const isoMpsPerConv = {};
-    isolatedNodes.forEach(n => { isoMpsPerConv[n.conv] = (isoMpsPerConv[n.conv] || 0) + n.mps; });
-    const maxIsoMps = Math.max(0, ...Object.values(isoMpsPerConv));
-    const extraIsoHeight = Math.min(400, maxIsoMps * 1.5 + isolatedNodes.length * 10);
-    const height = baseHeight + extraIsoHeight;
+    const nodesPerConv = new Map();
+    nodes.forEach(n => nodesPerConv.set(n.conv, (nodesPerConv.get(n.conv) || 0) + 1));
+    const maxNodesInCol = Math.max(1, ...nodesPerConv.values());
+    const isoCount = isolatedNodes.length;
+    const isoPerConv = {};
+    isolatedNodes.forEach(n => { isoPerConv[n.conv] = (isoPerConv[n.conv] || 0) + 1; });
+    const maxIsoInCol = Math.max(0, ...Object.values(isoPerConv), 0);
+    // 35px per node in densest column for connected, 18px per isolated
+    const connectedHeight = Math.max(550, maxNodesInCol * 35);
+    const isoHeight = maxIsoInCol * 18;
+    const height = connectedHeight + isoHeight;
     const margin = { top: 50, right: 40, bottom: 20, left: 40 };
 
     const svg = d3.select(container).append('svg')
@@ -1584,15 +1583,15 @@ const SankeyView = {
       .append('g')
       .attr('transform', `translate(${margin.left},${margin.top})`);
 
-    // Sankey layout — generous padding for readability
+    // Sankey layout — padding scales with space
     const nodeWidth = 14;
-    const nodePad = Math.max(6, Math.min(14, Math.floor(height / maxNodesInCol * 0.3)));
+    const nodePad = Math.max(8, Math.min(20, Math.floor(connectedHeight / maxNodesInCol * 0.3)));
     const sankey = d3.sankey()
       .nodeId(d => d.index)
       .nodeWidth(nodeWidth)
       .nodePadding(nodePad)
       .nodeSort((a, b) => b.value - a.value)
-      .extent([[150, 0], [width - 100, height]]);
+      .extent([[150, 0], [width - 100, connectedHeight]]);
 
     const graph = sankey({ nodes: nodes.map((n, i) => ({ ...n, index: i })), links });
 
