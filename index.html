@@ -2006,7 +2006,8 @@ const NetworkView = {
         if (fp.length && !fp.includes(n.p)) return; // party filter (multi)
         if (fc.length && n.c && !n.c.some(c => fc.includes(c))) return; // conv filter (multi)
         if (ff.length) { // faction filter
-          const mpFr = DATA.mpProfiles[n.id] && getMpFactions(DATA.mpProfiles[n.id]);
+          const profId = n.id.replace(/^m_/, '');
+          const mpFr = DATA.mpProfiles[profId] && getMpFactions(DATA.mpProfiles[profId]);
           if (!mpFr || !Object.values(mpFr).some(f => ff.includes(f))) return;
         }
         nodeMap.set(n.id, { ...n, x: undefined, y: undefined, vx: 0, vy: 0 });
