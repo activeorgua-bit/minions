@@ -1066,7 +1066,8 @@ input[type="range"]::-webkit-slider-thumb {
       <input type="text" class="search-input" id="trajSearch" placeholder="Пошук депутата...">
     </div>
     <div class="controls">
-      <div style="width:100%"><span class="control-label">Партії:</span><div id="trajPartyPills"></div></div>
+      <div id="trajPartyWrap" style="width:100%"><span class="control-label">Партії:</span><div id="trajPartyPills"></div></div>
+      <div id="trajFactionWrap" style="width:100%;display:none"><span class="control-label">Фракції:</span><div id="trajFactionPills"></div></div>
     </div>
     <div class="card" id="trajContainer" style="padding:0;position:relative">
       <canvas id="trajCanvas" style="display:block;cursor:grab"></canvas>
@@ -2982,9 +2983,15 @@ const TrajectoryView = {
       this.filterParties = vals;
       this.loadData();
     });
+    createMultiSelect('trajFactionPills', getFactionMultiOptions(), vals => {
+      this.filterFactions = vals;
+      this.loadData();
+    });
 
     document.getElementById('trajMode').addEventListener('change', e => {
       this.mode = e.target.value;
+      document.getElementById('trajPartyWrap').style.display = this.mode === 'party' ? '' : 'none';
+      document.getElementById('trajFactionWrap').style.display = this.mode === 'faction' ? '' : 'none';
       this.loadData();
     });
 
@@ -2993,11 +3000,13 @@ const TrajectoryView = {
     this.initialized = true;
   },
 
+  filterFactions: [],
+
   loadData() {
     this.selectedNodes.clear();
     const profiles = DATA.mpProfiles;
-    const fp = this.filterParties;
     const useFaction = this.mode === 'faction';
+    const fp = useFaction ? (this.filterFactions || []) : this.filterParties;
 
     // Build nodes: MPs with enough convocations
     const nodeMap = new Map();
@@ -3686,6 +3695,12 @@ const StatsView = {
         <span style="color:var(--text3);font-size:0.72rem">${m.cc} скл.</span>
       </div>`;
     });
+    if (factionChangers.length > 10) {
+      html += `<a href="#" onclick="event.preventDefault();showModal('Перебіжчики фракцій (${factionChangers.length})', factionChangersList_html)" style="font-size:0.75rem;color:var(--accent);display:block;margin-top:0.5rem">Показати всіх ${factionChangers.length} →</a>`;
+      window.factionChangersList_html = '<div class="mp-list">' + factionChangers.map(m =>
+        `<div class="mp-list-item"><span>${m.n} <span style="color:var(--text3);font-size:0.72rem">(${m.ch} змін, ${m.cc} скл.)</span></span><span><a href="#" onclick="event.preventDefault();closeModal();showProfile('${m.id}')">Профіль</a></span></div>`
+      ).join('') + '</div>';
+    }
     html += '</div>';
 
     // Conformists: MPs who NEVER changed faction in any convocation
@@ -3713,6 +3728,12 @@ const StatsView = {
         <span style="font-weight:600">${m.cc} скл.</span>
       </div>`;
     });
+    if (conformists.length > 10) {
+      html += `<a href="#" onclick="event.preventDefault();showModal('Конформісти (${conformists.length})', conformistsList_html)" style="font-size:0.75rem;color:var(--accent);display:block;margin-top:0.5rem">Показати всіх ${conformists.length} →</a>`;
+      window.conformistsList_html = '<div class="mp-list">' + conformists.map(m =>
+        `<div class="mp-list-item"><span>${m.n} <span style="color:var(--text3);font-size:0.72rem">(${m.cc} скл.)</span></span><span><a href="#" onclick="event.preventDefault();closeModal();showProfile('${m.id}')">Профіль</a></span></div>`
+      ).join('') + '</div>';
+    }
     html += `</div><p style="font-size:0.75rem;color:var(--text3);margin-top:0.5rem">Всього: ${conformists.length} конформістів</p></div>`;
 
     // Card: Assistants who became MPs
