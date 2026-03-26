@@ -281,8 +281,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* === SANKEY (View 1) === */
-.sankey-container { position: relative; }
-.sankey-container svg { width: 100%; }
+.sankey-container { position: relative; overflow-y: auto; max-height: 90vh; }
+.sankey-container svg { width: 100%; min-height: 600px; }
 .sankey-node rect {
   cursor: pointer;
   transition: opacity 0.3s;
@@ -1562,14 +1562,20 @@ const SankeyView = {
       mpIds: l.mpIds,
     }));
 
-    // Dimensions — count isolated nodes per column to reserve space
+    // Dimensions — scale height with data density
     const width = container.clientWidth - 80;
-    // Estimate extra height for isolated nodes: sum of MPs in the busiest column
+    const numConvs = new Set(nodes.map(n => n.conv)).size;
+    const maxNodesInCol = Math.max(...Array.from(
+      nodes.reduce((m, n) => m.set(n.conv, (m.get(n.conv) || 0) + 1), new Map()).values()
+    ));
+    // Give each node at least 22px (rect + padding) — minimum 600, grows with data
+    const baseHeight = Math.max(600, maxNodesInCol * 22, nodes.length * 10);
+    // Extra space for isolated nodes
     const isoMpsPerConv = {};
     isolatedNodes.forEach(n => { isoMpsPerConv[n.conv] = (isoMpsPerConv[n.conv] || 0) + n.mps; });
     const maxIsoMps = Math.max(0, ...Object.values(isoMpsPerConv));
     const extraIsoHeight = Math.min(400, maxIsoMps * 1.5 + isolatedNodes.length * 10);
-    const height = Math.max(550, nodes.length * 8) + extraIsoHeight;
+    const height = baseHeight + extraIsoHeight;
     const margin = { top: 50, right: 40, bottom: 20, left: 40 };
 
     const svg = d3.select(container).append('svg')
@@ -1578,12 +1584,13 @@ const SankeyView = {
       .append('g')
       .attr('transform', `translate(${margin.left},${margin.top})`);
 
-    // Sankey layout
+    // Sankey layout — generous padding for readability
     const nodeWidth = 14;
+    const nodePad = Math.max(6, Math.min(14, Math.floor(height / maxNodesInCol * 0.3)));
     const sankey = d3.sankey()
       .nodeId(d => d.index)
       .nodeWidth(nodeWidth)
-      .nodePadding(4)
+      .nodePadding(nodePad)
       .nodeSort((a, b) => b.value - a.value)
       .extent([[150, 0], [width - 100, height]]);
 
