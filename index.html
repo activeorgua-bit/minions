@@ -1668,19 +1668,19 @@ const SankeyView = {
         if (!convBottoms[n.conv] || n.y1 > convBottoms[n.conv]) convBottoms[n.conv] = n.y1;
       });
       const isoPad = 6;
-      // Calculate pixels-per-MP from sankey nodes to match their visual scale
-      let pxPerMp = 1;
+      // Scale: use 0.5x of sankey's px-per-MP to keep isolated nodes visible but not overwhelming
+      let pxPerMp = 0.5;
       const sankeyWithVal = graph.nodes.filter(n => n.value > 0 && (n.y1 - n.y0) > 1);
       if (sankeyWithVal.length) {
         const ratios = sankeyWithVal.map(n => (n.y1 - n.y0) / n.value);
-        pxPerMp = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+        pxPerMp = Math.min(1.5, (ratios.reduce((a, b) => a + b, 0) / ratios.length) * 0.5);
       }
       isolatedNodes.sort((a, b) => b.mps - a.mps);
       isolatedNodes.forEach(iso => {
         const x = convX[iso.conv];
         if (x === undefined) return;
-        // Height proportional to MP count, matching sankey node scale
-        const isoH = Math.max(6, iso.mps * pxPerMp);
+        // Height proportional to MP count, capped at 150px
+        const isoH = Math.max(6, Math.min(150, iso.mps * pxPerMp));
         const yTop = (convBottoms[iso.conv] || 0) + isoPad + 20;
         convBottoms[iso.conv] = yTop + isoH + isoPad;
         const isLeft = x < width / 2;
@@ -1709,6 +1709,11 @@ const SankeyView = {
           .text(shortenParty(iso.name, 22))
           .append('title').text(`${iso.name} (${iso.mps} МП, без міграцій)`);
       });
+      // Resize SVG to fit all isolated nodes
+      const maxBottom = Math.max(...Object.values(convBottoms)) + 30;
+      if (maxBottom > height) {
+        d3.select(container).select('svg').attr('height', maxBottom + margin.top + margin.bottom);
+      }
     }
   }
 };
