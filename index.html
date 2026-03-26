@@ -1244,6 +1244,21 @@ function getMpFactions(profile) {
   return result;
 }
 
+// Lazy-initialized set of assistant names who became MPs
+let _astBecameMpNames = null;
+function getAstBecameMpSet() {
+  if (!_astBecameMpNames) {
+    _astBecameMpNames = new Map();
+    (DATA.statistics?.astBecameMp || []).forEach(a => _astBecameMpNames.set(a.a, a.id));
+  }
+  return _astBecameMpNames;
+}
+function astBecameMpTag(name) {
+  const mp = getAstBecameMpSet().get(name);
+  if (!mp) return '';
+  return ` <span onclick="event.preventDefault();event.stopPropagation();showProfile('${mp}')" style="font-size:0.6rem;padding:1px 5px;border-radius:8px;background:#e8f5e9;color:#2e7d32;cursor:pointer;font-weight:600" title="Став(ла) депутатом">МП</span>`;
+}
+
 function buildPartyLegend() {
   // Get parties sorted by total MPs (most important first)
   const sorted = Object.entries(DATA.partyStats)
@@ -2308,6 +2323,7 @@ const MigrationView = {
   filterFactions: [],
   filterConvs: [],
   filterTypes: [],
+  filterBecameMp: false,
   searchMp: '',
   searchAst: '',
 
@@ -2327,6 +2343,7 @@ const MigrationView = {
       <div style="width:100%"><span class="control-label">Фракції:</span><div id="migFactionPills"></div></div>
       <div><span class="control-label">Скликання:</span><div id="migConvPills"></div></div>
       <div><span class="control-label">Тип:</span><div id="migTypePills"></div></div>
+      <div class="control-group"><label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;color:var(--text2)"><input type="checkbox" id="migBecameMp"> Тільки ті, хто став депутатом</label></div>
     `;
     let searchTimeout, searchTimeout2;
     document.getElementById('migMpSearch').addEventListener('input', e => {
@@ -2354,6 +2371,10 @@ const MigrationView = {
       { value: '0', label: '○ На гром. засадах' }
     ], vals => {
       this.filterTypes = vals;
+      this.renderList();
+    });
+    document.getElementById('migBecameMp').addEventListener('change', e => {
+      this.filterBecameMp = e.target.checked;
       this.renderList();
     });
   },
@@ -2453,6 +2474,10 @@ const MigrationView = {
     if (this.filterTypes.length) {
       filtered = filtered.filter(d => this.filterTypes.includes(String(d.a)));
     }
+    if (this.filterBecameMp) {
+      const mpSet = getAstBecameMpSet();
+      filtered = filtered.filter(d => mpSet.has(d.n));
+    }
     if (this.searchMp) {
       filtered = filtered.filter(d => d.t.some(step => {
         const mpName = DATA.mpNames[step[1]] || '';
@@ -2478,7 +2503,7 @@ const MigrationView = {
 
       div.innerHTML = `
         <div style="display:flex;align-items:center;gap:0.5rem">
-          <a href="#" class="migration-item-name" onclick="event.preventDefault();showAssistantCard('${d.i || ''}')" style="color:var(--text1);text-decoration:none;cursor:pointer">${d.n}</a>
+          <a href="#" class="migration-item-name" onclick="event.preventDefault();showAssistantCard('${d.i || ''}')" style="color:var(--text1);text-decoration:none;cursor:pointer">${d.n}</a>${astBecameMpTag(d.n)}
           <span class="pattern-badge ${patternClass[d.p]}">${patternLabels[d.p]}</span>
           <span style="font-size:0.65rem;color:var(--text3)">${d.a === 1 ? '●\u2009платн.' : '○\u2009волонт.'}</span>
         </div>
@@ -2784,7 +2809,7 @@ function showProfile(mpId) {
         const typeColor = a[1] ? 'var(--accent)' : 'var(--text3)';
         const typeLabel = a[1] ? 'платний' : 'на гром. засадах';
         const astNameEsc = a[0].replace(/'/g, "\\'");
-        astHtml += `<div style="font-size:0.72rem;padding:1px 0;color:var(--text2)" title="${typeLabel}"><span style="color:${typeColor}">${typeIcon}</span> <a href="#" onclick="event.preventDefault();showAssistantCard(null,'${astNameEsc}')" style="color:var(--text2);text-decoration:none;border-bottom:1px dotted var(--text3)">${a[0]}</a></div>`;
+        astHtml += `<div style="font-size:0.72rem;padding:1px 0;color:var(--text2)" title="${typeLabel}"><span style="color:${typeColor}">${typeIcon}</span> <a href="#" onclick="event.preventDefault();showAssistantCard(null,'${astNameEsc}')" style="color:var(--text2);text-decoration:none;border-bottom:1px dotted var(--text3)">${a[0]}</a>${astBecameMpTag(a[0])}</div>`;
       });
       astHtml += '</div></div>';
     }
