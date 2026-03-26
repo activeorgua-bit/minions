@@ -2669,7 +2669,8 @@ function toggleCatAst(mpId, conv, badge) {
       const icon = a[1] ? '●' : '○';
       const clr = a[1] ? 'var(--accent)' : 'var(--text3)';
       const lbl = a[1] ? 'платний' : 'волонтер';
-      return `<div title="${lbl}"><span style="color:${clr}">${icon}</span> ${a[0]}</div>`;
+      const nameEsc = a[0].replace(/'/g, "\\'");
+      return `<div title="${lbl}" style="cursor:pointer" onclick="this.closest('.cat-ast-popup').remove();showAssistantCard(null,'${nameEsc}')"><span style="color:${clr}">${icon}</span> <span style="border-bottom:1px dotted var(--text3)">${a[0]}</span>${astBecameMpTag(a[0])}</div>`;
     }).join('');
 
   document.body.appendChild(popup);
