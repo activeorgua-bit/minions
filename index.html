@@ -1374,6 +1374,7 @@ const SankeyView = {
   showIsolated: false,
   convFrom: 1,
   convTo: 9,
+  mode: 'party', // 'party' or 'faction'
 
   init() {
     this.buildControls();
@@ -1388,7 +1389,9 @@ const SankeyView = {
     this.convFrom = minC;
     this.convTo = maxC;
 
-    let html = '<div class="control-group"><span class="control-label">Скликання:</span>';
+    let html = '<div class="control-group"><span class="control-label">Режим:</span>';
+    html += '<select id="sankeyMode"><option value="party">Партії</option><option value="faction">Фракції та групи</option></select></div>';
+    html += '<div class="control-group"><span class="control-label">Скликання:</span>';
     html += `<input type="range" id="sankeyConvFrom" min="${minC}" max="${maxC}" value="${minC}" style="width:80px">`;
     html += `<span id="sankeyRangeLabel" style="font-weight:600;min-width:60px;text-align:center">${romanNums[minC]} – ${romanNums[maxC]}</span>`;
     html += `<input type="range" id="sankeyConvTo" min="${minC}" max="${maxC}" value="${maxC}" style="width:80px">`;
@@ -1396,7 +1399,7 @@ const SankeyView = {
     html += '<div class="control-group"><span class="control-label">Мін. депутатів:</span>';
     html += '<input type="range" id="sankeyMinFlow" min="1" max="20" value="3">';
     html += '<span id="sankeyMinVal">3</span></div>';
-    html += '<div class="control-group"><label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;color:var(--text2)"><input type="checkbox" id="sankeyShowIsolated"> Показати партії без міграцій</label></div>';
+    html += '<div class="control-group"><label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;color:var(--text2)"><input type="checkbox" id="sankeyShowIsolated"> Показати без міграцій</label></div>';
     ctrl.innerHTML = html;
 
     const updateRange = () => {
@@ -1410,6 +1413,16 @@ const SankeyView = {
       document.getElementById('sankeyRangeLabel').textContent = `${romanNums[from]} – ${romanNums[to]}`;
       this.render();
     };
+    document.getElementById('sankeyMode').addEventListener('change', e => {
+      this.mode = e.target.value;
+      // Faction data starts at conv 3
+      if (this.mode === 'faction' && this.convFrom < 3) {
+        this.convFrom = 3;
+        document.getElementById('sankeyConvFrom').value = 3;
+        document.getElementById('sankeyRangeLabel').textContent = `${romanNums[3]} – ${romanNums[this.convTo]}`;
+      }
+      this.render();
+    });
     document.getElementById('sankeyConvFrom').addEventListener('input', updateRange);
     document.getElementById('sankeyConvTo').addEventListener('input', updateRange);
     document.getElementById('sankeyMinFlow').addEventListener('input', e => {
@@ -1426,16 +1439,20 @@ const SankeyView = {
     const container = document.getElementById('sankeyChart');
     container.innerHTML = '';
     const minFlow = parseInt(document.getElementById('sankeyMinFlow')?.value || '3');
-    const { convFrom, convTo } = this;
+    const { convFrom, convTo, mode } = this;
+
+    // Select data source based on mode
+    const migData = mode === 'faction' ? (DATA.factionMigrations || DATA.mpMigrations) : DATA.mpMigrations;
+    const statsData = mode === 'faction' ? (DATA.factionStats || DATA.partyStats) : DATA.partyStats;
 
     // Filter transitions to selected convocation range
-    const transitions = DATA.mpMigrations.transitions.filter(t => {
+    const transitions = migData.transitions.filter(t => {
       const [a, b] = t.split('→').map(Number);
       return a >= convFrom && b <= convTo;
     });
 
     // Filter flows
-    let flows = DATA.mpMigrations.flows.filter(f => f.count >= minFlow && transitions.includes(f.transition));
+    let flows = migData.flows.filter(f => f.count >= minFlow && transitions.includes(f.transition));
 
     if (flows.length === 0) {
       container.innerHTML = '<div class="loading">Немає даних для обраних фільтрів</div>';
@@ -1463,7 +1480,7 @@ const SankeyView = {
       const activeConvs = new Set();
       transitions.forEach(t => { const [a, b] = t.split('→'); activeConvs.add(a); activeConvs.add(b); });
       activeConvs.forEach(c => {
-        Object.entries(DATA.partyStats).forEach(([party, stats]) => {
+        Object.entries(statsData).forEach(([party, stats]) => {
           if (stats[c]) {
             const key = `${c}_${party}`;
             if (!nodeMap.has(key)) {
