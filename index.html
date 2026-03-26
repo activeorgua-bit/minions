@@ -1544,10 +1544,11 @@ const SankeyView = {
 
     // Dimensions — count isolated nodes per column to reserve space
     const width = container.clientWidth - 80;
-    const isoPerConv = {};
-    isolatedNodes.forEach(n => { isoPerConv[n.conv] = (isoPerConv[n.conv] || 0) + 1; });
-    const maxIso = Math.max(0, ...Object.values(isoPerConv));
-    const extraIsoHeight = maxIso * 22;
+    // Estimate extra height for isolated nodes: sum of MPs in the busiest column
+    const isoMpsPerConv = {};
+    isolatedNodes.forEach(n => { isoMpsPerConv[n.conv] = (isoMpsPerConv[n.conv] || 0) + n.mps; });
+    const maxIsoMps = Math.max(0, ...Object.values(isoMpsPerConv));
+    const extraIsoHeight = Math.min(400, maxIsoMps * 1.5 + isolatedNodes.length * 10);
     const height = Math.max(550, nodes.length * 8) + extraIsoHeight;
     const margin = { top: 50, right: 40, bottom: 20, left: 40 };
 
@@ -1667,14 +1668,19 @@ const SankeyView = {
         if (!convBottoms[n.conv] || n.y1 > convBottoms[n.conv]) convBottoms[n.conv] = n.y1;
       });
       const isoPad = 6;
-      const maxIsoMps = Math.max(1, ...isolatedNodes.map(n => n.mps));
-      // Sort: biggest parties first within each conv
+      // Calculate pixels-per-MP from sankey nodes to match their visual scale
+      let pxPerMp = 1;
+      const sankeyWithVal = graph.nodes.filter(n => n.value > 0 && (n.y1 - n.y0) > 1);
+      if (sankeyWithVal.length) {
+        const ratios = sankeyWithVal.map(n => (n.y1 - n.y0) / n.value);
+        pxPerMp = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+      }
       isolatedNodes.sort((a, b) => b.mps - a.mps);
       isolatedNodes.forEach(iso => {
         const x = convX[iso.conv];
         if (x === undefined) return;
-        // Height proportional to MP count, min 8, max 40
-        const isoH = Math.max(8, Math.min(40, (iso.mps / maxIsoMps) * 40));
+        // Height proportional to MP count, matching sankey node scale
+        const isoH = Math.max(6, iso.mps * pxPerMp);
         const yTop = (convBottoms[iso.conv] || 0) + isoPad + 20;
         convBottoms[iso.conv] = yTop + isoH + isoPad;
         const isLeft = x < width / 2;
