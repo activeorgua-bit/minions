@@ -2795,9 +2795,9 @@ function showProfile(mpId) {
 
   let linksHtml = '';
   if (p.w) linksHtml += `<a href="${p.w}" target="_blank">Вікіпедія</a>`;
-  if (p.c.length > 0 && p.c[0].length > 3) {
-    linksHtml += `<a href="${p.c[0][3]}" target="_blank">Сайт ВР</a>`;
-  }
+  // URL is at index 5: [conv, party, totalAst, paid, vol, url]
+  const radaUrl = p.c.find(e => e[5] && String(e[5]).startsWith('http'));
+  if (radaUrl) linksHtml += `<a href="${radaUrl[5]}" target="_blank">Сайт ВР</a>`;
 
   let timelineHtml = '';
   p.c.forEach(entry => {
