@@ -1498,17 +1498,11 @@ const SankeyView = {
       this.showIsolated = e.target.checked;
       this.render();
     });
+    let zoomTimeout;
     document.getElementById('sankeyZoom').addEventListener('input', e => {
-      const z = e.target.value;
-      document.getElementById('sankeyZoomVal').textContent = z + '%';
-      const container = document.getElementById('sankeyChart');
-      const svgEl = container.querySelector('svg');
-      if (svgEl) {
-        const origW = svgEl.dataset.origW || svgEl.getAttribute('width');
-        if (!svgEl.dataset.origW) svgEl.dataset.origW = origW;
-        svgEl.style.width = (parseFloat(origW) * z / 100) + 'px';
-        svgEl.style.minWidth = (parseFloat(origW) * z / 100) + 'px';
-      }
+      document.getElementById('sankeyZoomVal').textContent = e.target.value + '%';
+      clearTimeout(zoomTimeout);
+      zoomTimeout = setTimeout(() => this.render(), 200);
     });
   },
 
@@ -1581,8 +1575,10 @@ const SankeyView = {
       mpIds: l.mpIds,
     }));
 
-    // Dimensions — generous spacing for readability
-    const width = container.clientWidth - 80;
+    // Dimensions — generous spacing for readability; zoom widens the chart
+    const zoomPct = parseInt(document.getElementById('sankeyZoom')?.value || '100');
+    const baseWidth = container.clientWidth - 80;
+    const width = Math.max(baseWidth, baseWidth * zoomPct / 100);
     const nodesPerConv = new Map();
     nodes.forEach(n => nodesPerConv.set(n.conv, (nodesPerConv.get(n.conv) || 0) + 1));
     const maxNodesInCol = Math.max(1, ...nodesPerConv.values());
@@ -1781,16 +1777,9 @@ const SankeyView = {
         d3.select(container).select('svg').attr('height', maxBottom + margin.top + margin.bottom);
       }
     }
-    // Store original width for zoom and apply current zoom
-    const svgEl = container.querySelector('svg');
-    if (svgEl) {
-      svgEl.dataset.origW = svgEl.getAttribute('width');
-      const zoom = document.getElementById('sankeyZoom');
-      if (zoom && zoom.value !== '100') {
-        const z = zoom.value;
-        svgEl.style.width = (parseFloat(svgEl.dataset.origW) * z / 100) + 'px';
-        svgEl.style.minWidth = svgEl.style.width;
-      }
+    // Ensure container can scroll horizontally when zoomed
+    if (zoomPct > 100) {
+      container.style.overflowX = 'auto';
     }
   }
 };
