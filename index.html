@@ -2475,6 +2475,7 @@ const MigrationView = {
       { key: 'n', label: 'Одне скликання', value: s.singleConv, color: '#8e6ba8' },
     ];
     const total = data.reduce((a, b) => a + b.value, 0);
+    const multiConvTotal = s.followedMp + s.stayedWithParty + s.independent;
 
     const size = 320;
     const radius = size / 2 - 20;
@@ -2511,11 +2512,14 @@ const MigrationView = {
 
     // Center text
     svg.append('text').attr('class', 'donut-center-number')
-      .attr('text-anchor', 'middle').attr('dy', '-0.1em')
+      .attr('text-anchor', 'middle').attr('dy', '-0.6em')
       .text(formatNum(total));
     svg.append('text').attr('class', 'donut-center-label')
-      .attr('text-anchor', 'middle').attr('dy', '1.4em')
-      .text('помічників у 2+ скликаннях');
+      .attr('text-anchor', 'middle').attr('dy', '0.9em')
+      .text('всього помічників');
+    svg.append('text').attr('class', 'donut-center-label')
+      .attr('text-anchor', 'middle').attr('dy', '2.4em')
+      .text(formatNum(multiConvTotal) + ' у 2+ скликаннях');
 
     // Legend below
     const legend = d3.select(container).append('div')
