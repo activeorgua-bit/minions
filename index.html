@@ -1168,6 +1168,10 @@ async function loadData() {
 // ============================================================
 // UTILITY FUNCTIONS
 // ============================================================
+function normalizeStr(s) {
+  return s.toLowerCase().replace(/[''ʼ`´"]/g, "'");
+}
+
 function getPartyColor(party) {
   return DATA.partyColors[party] || '#a0a0a0';
 }
@@ -2024,14 +2028,14 @@ const NetworkView = {
     document.getElementById('networkSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
-        this.searchTerm = e.target.value.toLowerCase();
+        this.searchTerm = normalizeStr(e.target.value);
         this.draw();
       }, 250);
     });
     document.getElementById('networkAstSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout2);
       searchTimeout2 = setTimeout(() => {
-        this.searchAssistant = e.target.value.toLowerCase();
+        this.searchAssistant = normalizeStr(e.target.value);
         this.draw();
       }, 250);
     });
@@ -2212,8 +2216,8 @@ const NetworkView = {
 
       let alpha = 1;
       if (dimOthers && !highlighted.has(n.id)) alpha = 0.15;
-      const mpMatch = searchTerm && isMp && n.n.toLowerCase().includes(searchTerm);
-      const astMatch = searchAssistant && !isMp && n.n.toLowerCase().includes(searchAssistant);
+      const mpMatch = searchTerm && isMp && normalizeStr(n.n).includes(searchTerm);
+      const astMatch = searchAssistant && !isMp && normalizeStr(n.n).includes(searchAssistant);
       const anySearch = searchTerm || searchAssistant;
       if (anySearch) {
         if (mpMatch || astMatch) {
@@ -2249,7 +2253,7 @@ const NetworkView = {
         ctx.fillText(n.n.split(' ').slice(0, 2).join(' '), n.x, n.y - r - 6);
       }
       // Label for hovered, searched, or selection-connected MPs (skip if already labeled by selection ring)
-      const showLabel = isMp && !this.selectedNodes.has(n.id) && (n === hoveredNode || (searchTerm && n.n.toLowerCase().includes(searchTerm)) || (hasSelection && highlighted.has(n.id)));
+      const showLabel = isMp && !this.selectedNodes.has(n.id) && (n === hoveredNode || (searchTerm && normalizeStr(n.n).includes(searchTerm)) || (hasSelection && highlighted.has(n.id)));
       if (showLabel) {
         ctx.font = '10px "Segoe UI", system-ui, sans-serif';
         ctx.fillStyle = '#333';
@@ -2427,11 +2431,11 @@ const MigrationView = {
     let searchTimeout, searchTimeout2;
     document.getElementById('migMpSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => { this.searchMp = e.target.value.toLowerCase(); this.renderList(); }, 200);
+      searchTimeout = setTimeout(() => { this.searchMp = normalizeStr(e.target.value); this.renderList(); }, 200);
     });
     document.getElementById('migAstSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout2);
-      searchTimeout2 = setTimeout(() => { this.searchAst = e.target.value.toLowerCase(); this.renderList(); }, 200);
+      searchTimeout2 = setTimeout(() => { this.searchAst = normalizeStr(e.target.value); this.renderList(); }, 200);
     });
     createMultiSelect('migPartyPills', getPartyMultiOptions(), vals => {
       this.filterParties = vals;
@@ -2560,11 +2564,11 @@ const MigrationView = {
     if (this.searchMp) {
       filtered = filtered.filter(d => d.t.some(step => {
         const mpName = DATA.mpNames[step[1]] || '';
-        return mpName.toLowerCase().includes(this.searchMp);
+        return normalizeStr(mpName).includes(this.searchMp);
       }));
     }
     if (this.searchAst) {
-      filtered = filtered.filter(d => d.n.toLowerCase().includes(this.searchAst));
+      filtered = filtered.filter(d => normalizeStr(d.n).includes(this.searchAst));
     }
     const shown = filtered.slice(0, 200);
 
@@ -2628,7 +2632,7 @@ const CatalogView = {
     let searchTimeout;
     document.getElementById('profileSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => { this.searchTerm = e.target.value.toLowerCase(); this.renderTable(); }, 200);
+      searchTimeout = setTimeout(() => { this.searchTerm = normalizeStr(e.target.value); this.renderTable(); }, 200);
     });
 
     createMultiSelect('catPartyPills', getPartyMultiOptions(), vals => {
@@ -2654,7 +2658,7 @@ const CatalogView = {
     let mps = this.allMps;
 
     if (this.searchTerm) {
-      mps = mps.filter(m => m.n.toLowerCase().includes(this.searchTerm));
+      mps = mps.filter(m => normalizeStr(m.n).includes(this.searchTerm));
     }
     if (this.filterParties.length) {
       mps = mps.filter(m => m.c.some(e => this.filterParties.includes(e[1])));
@@ -3025,7 +3029,7 @@ const TrajectoryView = {
     let searchTimeout;
     document.getElementById('trajSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => { this.searchTerm = e.target.value.toLowerCase(); this.draw(); }, 200);
+      searchTimeout = setTimeout(() => { this.searchTerm = normalizeStr(e.target.value); this.draw(); }, 200);
     });
 
     createMultiSelect('trajPartyPills', getPartyMultiOptions(), vals => {
@@ -3226,7 +3230,7 @@ const TrajectoryView = {
       let alpha = 1;
       if (dimOthers && !highlighted.has(n.id)) alpha = 0.1;
       if (searchTerm) {
-        if (n.n.toLowerCase().includes(searchTerm)) {
+        if (normalizeStr(n.n).includes(searchTerm)) {
           alpha = 1;
           ctx.beginPath();
           ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
@@ -3256,7 +3260,7 @@ const TrajectoryView = {
 
       // Labels for selected, hovered, searched, or connected
       const showLabel = n === hoveredNode || this.selectedNodes.has(n.id) ||
-        (searchTerm && n.n.toLowerCase().includes(searchTerm)) ||
+        (searchTerm && normalizeStr(n.n).includes(searchTerm)) ||
         (hasSelection && highlighted.has(n.id));
       if (showLabel) {
         ctx.font = '10px "Segoe UI", system-ui, sans-serif';
