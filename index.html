@@ -438,6 +438,7 @@ input[type="range"]::-webkit-slider-thumb {
 .pattern-f { background: #e8f5e9; color: #2e7d32; }
 .pattern-s { background: #e3f2fd; color: #1565c0; }
 .pattern-i { background: #fff3e0; color: #e65100; }
+.pattern-n { background: #f3e5f5; color: #6a1b9a; }
 
 /* === PROFILE (View 5) === */
 .profile-container { max-width: 900px; }
@@ -1019,11 +1020,12 @@ input[type="range"]::-webkit-slider-thumb {
     <div class="explainer" onclick="this.classList.toggle('open')">
       <div class="explainer-toggle"><span class="explainer-arrow">&#9654;</span> Як читати цю діаграму?</div>
       <div class="explainer-body">
-        <p><b>Пончикова діаграма</b> показує, як поводяться помічники, що працювали у 2+ скликаннях.</p>
+        <p><b>Пончикова діаграма</b> показує розподіл помічників за типом кар'єрного шляху.</p>
         <ul>
           <li><b>Слідом за МП</b> — помічник залишився з тим самим депутатом (навіть якщо той змінив партію)</li>
           <li><b>З партією</b> — помічник залишився в тій самій партії, але працює на іншого депутата</li>
           <li><b>Незалежні</b> — помічник змінив і депутата, і партію</li>
+          <li><b>Одне скликання</b> — помічник працював лише в одному скликанні</li>
         </ul>
         <p>Клікніть на сегмент, щоб відфільтрувати список праворуч. У списку показано шлях кожного помічника: скликання, депутат і партія (кольорова крапка).</p>
       </div>
@@ -2470,6 +2472,7 @@ const MigrationView = {
       { key: 'f', label: 'Слідом за МП', value: s.followedMp, color: '#6ba88e' },
       { key: 's', label: 'З партією', value: s.stayedWithParty, color: '#5b8a9a' },
       { key: 'i', label: 'Незалежні', value: s.independent, color: '#d4a574' },
+      { key: 'n', label: 'Одне скликання', value: s.singleConv, color: '#8e6ba8' },
     ];
     const total = data.reduce((a, b) => a + b.value, 0);
 
@@ -2572,8 +2575,8 @@ const MigrationView = {
     }
     const shown = filtered.slice(0, 200);
 
-    const patternLabels = { f: 'Слідом', s: 'З партією', i: 'Незалежний' };
-    const patternClass = { f: 'pattern-f', s: 'pattern-s', i: 'pattern-i' };
+    const patternLabels = { f: 'Слідом', s: 'З партією', i: 'Незалежний', n: 'Одне скликання' };
+    const patternClass = { f: 'pattern-f', s: 'pattern-s', i: 'pattern-i', n: 'pattern-n' };
 
     shown.forEach(d => {
       const div = document.createElement('div');
@@ -2776,8 +2779,8 @@ function showAssistantCard(astId, astName) {
     return;
   }
 
-  const patternLabels = { f: 'Слідом за депутатом', s: 'З партією', i: 'Незалежний', '?': '—' };
-  const patternColors = { f: '#6ba88e', s: '#5b8a9a', i: '#d4a574', '?': '#999' };
+  const patternLabels = { f: 'Слідом за депутатом', s: 'З партією', i: 'Незалежний', n: 'Одне скликання', '?': '—' };
+  const patternColors = { f: '#6ba88e', s: '#5b8a9a', i: '#d4a574', n: '#8e6ba8', '?': '#999' };
   const typeLabel = ast.a === 1 ? '● Платний' : '○ На громадських засадах';
 
   let html = `<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem">
