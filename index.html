@@ -1995,7 +1995,7 @@ const NetworkView = {
   selectedNodes: new Set(),
   searchTerm: '',
   searchAssistant: '',
-  minShared: 3,
+  minShared: 2,
   filterFactions: [],
 
   init() {
@@ -2018,8 +2018,8 @@ const NetworkView = {
       <input type="text" class="search-input" id="networkAstSearch" placeholder="Пошук помічника...">
       <div class="control-group">
         <span class="control-label">Мін. спільних МП:</span>
-        <input type="range" id="networkMinShared" min="3" max="15" value="3">
-        <span id="networkMinVal">3</span>
+        <input type="range" id="networkMinShared" min="2" max="15" value="2">
+        <span id="networkMinVal">2</span>
       </div>
       <div style="width:100%"><span class="control-label">Партії:</span> <span style="font-size:0.7rem;color:var(--text3)">(клікніть для вибору)</span><div id="netPartyPills"></div></div>
       <div style="width:100%"><span class="control-label">Фракції:</span><div id="netFactionPills"></div></div>
