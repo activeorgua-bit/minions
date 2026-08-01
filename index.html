@@ -3617,6 +3617,40 @@ const StatsView = {
     });
     html += '</div></div>';
 
+    // Card 2b: MP newcomers per convocation
+    if (st.mpNewcomers) {
+      html += '<div class="card stat-card"><div class="stat-card-title">Депутати-новачки за скликаннями</div>';
+      html += '<div class="stat-bars">';
+      const maxNewMps = Math.max(...st.mpNewcomers.map(r => r.total));
+      st.mpNewcomers.forEach(r => {
+        const pct = (r.first / r.total * 100).toFixed(0);
+        const fillPct = r.first / maxNewMps * 100;
+        html += `<div class="stat-bar-row">
+          <span class="stat-bar-label">${romanNums[r.c]}</span>
+          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${fillPct}%;background:#8e6ba8">${r.first}</div></div>
+          <span class="stat-bar-value">${pct}%</span>
+        </div>`;
+      });
+      html += '</div><div class="stat-sub">Кількість і частка депутатів скликання, які до нього ніколи не були депутатами (для I скликання — 100% за визначенням)</div></div>';
+    }
+
+    // Card 2c: Assistant newcomers per convocation
+    if (st.astNewcomers) {
+      html += '<div class="card stat-card"><div class="stat-card-title">Помічники-новачки за скликаннями</div>';
+      html += '<div class="stat-bars">';
+      const maxNewAst = Math.max(...st.astNewcomers.map(r => r.total));
+      st.astNewcomers.forEach(r => {
+        const pct = (r.first / r.total * 100).toFixed(0);
+        const fillPct = r.first / maxNewAst * 100;
+        html += `<div class="stat-bar-row">
+          <span class="stat-bar-label">${romanNums[r.c]}</span>
+          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${fillPct}%;background:#d4a574">${formatNum(r.first)}</div></div>
+          <span class="stat-bar-value">${pct}%</span>
+        </div>`;
+      });
+      html += '</div><div class="stat-sub">Кількість і частка помічників скликання, які до нього ніколи не були помічниками (дані про помічників доступні з IV скликання, тому для IV — 100%)</div></div>';
+    }
+
     // Card 3: Loyal Assistants
     html += '<div class="card stat-card"><div class="stat-card-title">Найвірніші помічники</div>';
     html += `<div class="stat-big-number">${formatNum(st.loyalAssistants.length)}</div>`;
