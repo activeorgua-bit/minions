@@ -1997,6 +1997,8 @@ const NetworkView = {
   searchAssistant: '',
   minShared: 5,
   filterFactions: [],
+  focusMode: false,
+  expandedIds: new Set(),
 
   init() {
     this.canvas = document.getElementById('networkCanvas');
@@ -2016,6 +2018,7 @@ const NetworkView = {
     ctrl.innerHTML = `
       <input type="text" class="search-input" id="networkSearch" placeholder="Пошук депутата...">
       <input type="text" class="search-input" id="networkAstSearch" placeholder="Пошук помічника...">
+      <div class="control-group"><label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;color:var(--text2)" title="Показувати лише знайдених та безпосередньо пов'язаних з ними. Клік на вузол розкриває його зв'язки, повторний клік — згортає"><input type="checkbox" id="networkFocusMode"> Фокус на знайдених</label></div>
       <div class="control-group">
         <span class="control-label">Мін. спільних МП:</span>
         <input type="range" id="networkMinShared" min="2" max="15" value="5">
@@ -2031,15 +2034,32 @@ const NetworkView = {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
         this.searchTerm = normalizeStr(e.target.value);
-        this.draw();
+        if (this.focusMode) {
+          this.expandedIds.clear();
+          this.applyFocus();
+        } else {
+          this.draw();
+        }
       }, 250);
     });
     document.getElementById('networkAstSearch').addEventListener('input', e => {
       clearTimeout(searchTimeout2);
       searchTimeout2 = setTimeout(() => {
         this.searchAssistant = normalizeStr(e.target.value);
-        this.draw();
+        if (this.focusMode) {
+          this.expandedIds.clear();
+          this.applyFocus();
+        } else {
+          this.draw();
+        }
       }, 250);
+    });
+
+    document.getElementById('networkFocusMode').addEventListener('change', e => {
+      this.focusMode = e.target.checked;
+      this.expandedIds.clear();
+      this.selectedNodes.clear();
+      this.applyFocus();
     });
 
     document.getElementById('networkMinShared').addEventListener('input', e => {
@@ -2123,11 +2143,36 @@ const NetworkView = {
       if (n.t === 'a' && !connectedAssistants.has(id)) nodeMap.delete(id);
     }
 
-    this.nodes = Array.from(nodeMap.values());
-    this.links = finalLinks.map(l => ({
-      source: nodeMap.get(l.s),
-      target: nodeMap.get(l.r),
-    })).filter(l => l.source && l.target);
+    this.allNodes = Array.from(nodeMap.values());
+    this.allLinkPairs = finalLinks;
+    this.expandedIds.clear();
+    this.applyFocus();
+  },
+
+  // Compute visible subset: everything, or (in focus mode with a search term)
+  // only matched nodes + their direct neighbors + neighbors of clicked (expanded) nodes
+  applyFocus() {
+    const nodeById = new Map(this.allNodes.map(n => [n.id, n]));
+    let visible = null;
+    if (this.focusMode && (this.searchTerm || this.searchAssistant)) {
+      const matched = new Set();
+      this.allNodes.forEach(n => {
+        const isMp = n.t === 'm';
+        if (this.searchTerm && isMp && normalizeStr(n.n).includes(this.searchTerm)) matched.add(n.id);
+        if (this.searchAssistant && !isMp && normalizeStr(n.n).includes(this.searchAssistant)) matched.add(n.id);
+      });
+      const seeds = new Set([...matched, ...this.expandedIds]);
+      visible = new Set(seeds);
+      this.allLinkPairs.forEach(l => {
+        if (seeds.has(l.s)) visible.add(l.r);
+        if (seeds.has(l.r)) visible.add(l.s);
+      });
+    }
+    this.nodes = visible ? this.allNodes.filter(n => visible.has(n.id)) : this.allNodes;
+    this.links = this.allLinkPairs
+      .filter(l => !visible || (visible.has(l.s) && visible.has(l.r)))
+      .map(l => ({ source: nodeById.get(l.s), target: nodeById.get(l.r) }))
+      .filter(l => l.source && l.target);
 
     this.resizeCanvas();
     this.startSimulation();
@@ -2221,6 +2266,7 @@ const NetworkView = {
       const mpMatch = searchTerm && isMp && normalizeStr(n.n).includes(searchTerm);
       const astMatch = searchAssistant && !isMp && normalizeStr(n.n).includes(searchAssistant);
       const anySearch = searchTerm || searchAssistant;
+      const focusActive = this.focusMode && anySearch;
       if (anySearch) {
         if (mpMatch || astMatch) {
           alpha = 1;
@@ -2228,7 +2274,7 @@ const NetworkView = {
           ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
           ctx.fillStyle = astMatch ? 'rgba(212,165,116,0.4)' : 'rgba(91,138,154,0.3)';
           ctx.fill();
-        } else if (!hoveredNode && !hasSelection) {
+        } else if (!hoveredNode && !hasSelection && !focusActive) {
           alpha = 0.15;
         }
       }
@@ -2255,7 +2301,7 @@ const NetworkView = {
         ctx.fillText(n.n.split(' ').slice(0, 2).join(' '), n.x, n.y - r - 6);
       }
       // Label for hovered, searched, or selection-connected MPs (skip if already labeled by selection ring)
-      const showLabel = isMp && !this.selectedNodes.has(n.id) && (n === hoveredNode || (searchTerm && normalizeStr(n.n).includes(searchTerm)) || (hasSelection && highlighted.has(n.id)));
+      const showLabel = isMp && !this.selectedNodes.has(n.id) && (n === hoveredNode || (searchTerm && normalizeStr(n.n).includes(searchTerm)) || (hasSelection && highlighted.has(n.id)) || (focusActive && nodes.length < 60));
       if (showLabel) {
         ctx.font = '10px "Segoe UI", system-ui, sans-serif';
         ctx.fillStyle = '#333';
@@ -2354,9 +2400,16 @@ const NetworkView = {
           const pos = getMousePos(e);
           const node = findNode(pos);
           if (node) {
-            if (this.selectedNodes.has(node.id)) this.selectedNodes.delete(node.id);
-            else this.selectedNodes.add(node.id);
-            this.draw();
+            if (this.focusMode && (this.searchTerm || this.searchAssistant)) {
+              // Focus mode: click expands the node's connections, second click collapses
+              if (this.expandedIds.has(node.id)) this.expandedIds.delete(node.id);
+              else this.expandedIds.add(node.id);
+              this.applyFocus();
+            } else {
+              if (this.selectedNodes.has(node.id)) this.selectedNodes.delete(node.id);
+              else this.selectedNodes.add(node.id);
+              this.draw();
+            }
           } else if (!node) {
             // Click on empty space clears selection
             if (this.selectedNodes.size) { this.selectedNodes.clear(); this.draw(); }
