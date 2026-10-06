@@ -863,6 +863,14 @@ input[type="range"]::-webkit-slider-thumb {
   transition: background 0.2s;
 }
 .modal-close:hover { background: var(--bg); }
+.modal-link {
+  height: 32px; padding: 0 12px;
+  border: none; border-radius: 8px;
+  background: var(--bg2); color: var(--text2);
+  font: inherit; font-size: 0.8rem; cursor: pointer;
+  transition: background 0.2s;
+}
+.modal-link:hover { background: var(--bg); }
 .modal-body {
   padding: 1rem 1.5rem 1.5rem;
   overflow-y: auto;
@@ -926,7 +934,10 @@ input[type="range"]::-webkit-slider-thumb {
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title" id="modalTitle"></div>
-      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="modal-link" id="modalLink" style="display:none" onclick="copyDeepLink(this)" title="Скопіювати посилання на цю картку">🔗 Посилання</button>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
     </div>
     <div class="modal-body" id="modalBody"></div>
   </div>
@@ -1401,39 +1412,81 @@ function initTabs() {
 
   tabEls.forEach(tab => {
     tab.addEventListener('click', () => {
-      const viewId = tab.dataset.view;
-      if (viewId === currentView) return;
-
-      tabEls.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      updatePill();
-
-      // Hide all views
-      document.querySelectorAll('.view').forEach(v => {
-        v.classList.remove('active');
-        v.style.display = 'none';
-      });
-
-      // Show new view
-      currentView = viewId;
-      const newView = document.getElementById('view-' + viewId);
-      newView.style.display = 'block';
-      // Force reflow then animate in
-      newView.offsetHeight;
-      requestAnimationFrame(() => {
-        newView.classList.add('active');
-        // Initialize view if first time
-        if (views[viewId] && !views[viewId].initialized) {
-          views[viewId].init();
-          views[viewId].initialized = true;
-        }
-      });
+      activateTab(tab.dataset.view);
+      setHash(tab.dataset.view);
     });
   });
 
   // Initial pill position
   requestAnimationFrame(updatePill);
   window.addEventListener('resize', updatePill);
+}
+
+function activateTab(viewId) {
+  const tabsEl = document.getElementById('tabs');
+  const tabEls = tabsEl.querySelectorAll('.tab');
+  const tab = tabsEl.querySelector(`.tab[data-view="${viewId}"]`);
+  const pill = document.getElementById('tabPill');
+  function updatePill() {
+    pill.style.width = tab.offsetWidth + 'px';
+    pill.style.transform = `translateX(${tab.offsetLeft - 4}px)`;
+  }
+  if (!tab || viewId === currentView) return;
+
+  tabEls.forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  updatePill();
+
+  // Hide all views
+  document.querySelectorAll('.view').forEach(v => {
+    v.classList.remove('active');
+    v.style.display = 'none';
+  });
+
+  // Show new view
+  currentView = viewId;
+  const newView = document.getElementById('view-' + viewId);
+  newView.style.display = 'block';
+  // Force reflow then animate in
+  newView.offsetHeight;
+  requestAnimationFrame(() => {
+    newView.classList.add('active');
+    // Initialize view if first time
+    if (views[viewId] && !views[viewId].initialized) {
+      views[viewId].init();
+      views[viewId].initialized = true;
+    }
+  });
+}
+
+// ============================================================
+// DEEP LINKS: #<tab>, #ast=<id>, #astn=<name>, #mp=<id>
+// ============================================================
+function setHash(h) {
+  history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
+  document.getElementById('modalLink').style.display = /^(ast|astn|mp)=/.test(h || '') ? '' : 'none';
+}
+
+function applyHash() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (!h) return;
+  const [key, val] = h.includes('=') ? [h.slice(0, h.indexOf('=')), h.slice(h.indexOf('=') + 1)] : [h, ''];
+  if (key === 'ast' || key === 'astn') {
+    activateTab('migration');
+    key === 'ast' ? showAssistantCard(val) : showAssistantCard(null, val);
+  } else if (key === 'mp') {
+    if (!views.profile.initialized) { views.profile.init(); views.profile.initialized = true; }
+    showProfile(val);
+  } else if (views[key]) {
+    closeModal();
+    activateTab(key);
+  }
+}
+
+function copyDeepLink(btn) {
+  const done = () => { btn.textContent = '✓ Скопійовано'; setTimeout(() => btn.textContent = '🔗 Посилання', 1500); };
+  navigator.clipboard ? navigator.clipboard.writeText(location.href).then(done, () => prompt('Посилання:', location.href))
+                      : prompt('Посилання:', location.href);
 }
 
 // ============================================================
@@ -2894,6 +2947,7 @@ function showAssistantCard(astId, astName) {
   }
 
   openModal(`Помічник: ${ast.n}`, html);
+  setHash(ast.i ? 'ast=' + ast.i : 'astn=' + encodeURIComponent(ast.n));
 }
 
 function showProfile(mpId) {
@@ -2908,6 +2962,7 @@ function showProfile(mpId) {
   profileView.offsetHeight;
   requestAnimationFrame(() => profileView.classList.add('active'));
   currentView = 'profile';
+  setHash(DATA.mpProfiles[mpId] ? 'mp=' + mpId : 'profile');
 
   // Update pill
   const pill = document.getElementById('tabPill');
@@ -4055,7 +4110,9 @@ function openModal(title, bodyHtml) {
   document.getElementById('modalOverlay').classList.add('visible');
 }
 function closeModal() {
-  document.getElementById('modalOverlay').classList.remove('visible');
+  const overlay = document.getElementById('modalOverlay');
+  if (overlay.classList.contains('visible') && /^#(ast|astn)=/.test(location.hash)) setHash(currentView);
+  overlay.classList.remove('visible');
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
@@ -4134,6 +4191,9 @@ async function init() {
   // Init first view
   SankeyView.init();
   SankeyView.initialized = true;
+
+  applyHash();
+  window.addEventListener('hashchange', applyHash);
 }
 
 function safeInit() {
